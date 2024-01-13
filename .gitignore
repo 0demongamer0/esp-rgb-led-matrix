@@ -10,3 +10,4 @@ out
 firmware.map
 upload.json
 *.code-workspace
+src\Common\Settings.cpp
