@@ -1,6 +1,6 @@
 /* MIT License
  *
- * Copyright (c) 2019 - 2021 Andreas Merkle <web@blue-andi.de>
+ * Copyright (c) 2019 - 2023 Andreas Merkle <web@blue-andi.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -33,7 +33,7 @@
  * Includes
  *****************************************************************************/
 #include "WsCmdPlugins.h"
-#include "PluginMgr.h"
+#include "PluginList.h"
 
 #include <Util.h>
 
@@ -72,30 +72,35 @@ void WsCmdPlugins::execute(AsyncWebSocket* server, AsyncWebSocketClient* client)
     /* Any error happended? */
     if (true == m_isError)
     {
-        server->text(client->id(), "NACK;\"Parameter invalid.\"");
+        sendNegativeResponse(server, client, "\"Parameter invalid.\"");
     }
     else
     {
-        String      rsp         = "ACK";
-        const char  DELIMITER   = ';';
-        const char* pluginName  = PluginMgr::getInstance().findFirst();
+        String                      msg;
+        uint8_t                     pluginTypeListLength    = 0U;
+        const PluginList::Element*  pluginTypeList          = PluginList::getList(pluginTypeListLength);
+        uint8_t                     idx                     = 0U;
 
-        while(nullptr != pluginName)
+        preparePositiveResponse(msg);
+
+        while(pluginTypeListLength > idx)
         {
-            rsp += DELIMITER;
-            rsp += "\"";
-            rsp += pluginName;
-            rsp += "\"";
+            if (0 < idx)
+            {
+                msg += DELIMITER;
+            }
 
-            pluginName = PluginMgr::getInstance().findNext();
+            msg += "\"";
+            msg += pluginTypeList[idx].name;
+            msg += "\"";
+
+            ++idx;
         }
 
-        server->text(client->id(), rsp);
+        sendResponse(server, client, msg);
     }
 
     m_isError = false;
-
-    return;
 }
 
 void WsCmdPlugins::setPar(const char* par)
@@ -103,8 +108,6 @@ void WsCmdPlugins::setPar(const char* par)
     UTIL_NOT_USED(par);
 
     m_isError = true;
-
-    return;
 }
 
 /******************************************************************************

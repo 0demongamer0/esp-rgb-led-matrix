@@ -8,22 +8,6 @@
         <link rel="stylesheet" type="text/css" href="/style/bootstrap.min.css" />
         <link rel="stylesheet" type="text/css" href="/style/sticky-footer-navbar.css" />
         <link rel="stylesheet" type="text/css" href="/style/style.css" />
-        <style>
-            .bd-placeholder-img {
-                font-size: 1.125rem;
-                text-anchor: middle;
-                -webkit-user-select: none;
-                -moz-user-select: none;
-                -ms-user-select: none;
-                user-select: none;
-            }
-
-            @media (min-width: 768px) {
-                .bd-placeholder-img-lg {
-                    font-size: 3.5rem;
-                }
-            }
-        </style>
 
         <title>PIXELIX</title>
         <link rel="shortcut icon" type="image/png" href="/favicon.png" />
@@ -57,6 +41,13 @@
                     <li><a href="https://github.com/PabluskiNC">PabluskiNC</a></li>
                     <li><a href="https://github.com/flcu">flcu</a></li>
                     <li><a href="https://github.com/ReinVelt">ReinVelt</a></li>
+                    <li><a href="https://github.com/NSD4rKn3SS">NSD4rKn3SS</a></li>
+                    <li><a href="https://github.com/nischneider">nischeider</a></li>
+                    <li><a href="https://github.com/gabryelreyes">Gabryel Reyes</a></li>
+                    <li><a href="https://github.com/Nikey">Nikey</a></li>
+                    <li><a href="https://github.com/nhjschulz">Norbert Schulz</a></li>
+                    <li><a href="https://github.com/ddijanic">ddijanic</a></li>
+                    <li><a href="https://github.com/captFuture">Chris Tarantl</a></li>
                 </ul>
                 <p>Used third party libraries:</p>
                 <ul>
@@ -73,28 +64,34 @@
                     <li><a href="https://github.com/adafruit/DHT-sensor-library">An Arduino library for the DHT series of low-cost temperature/humidity sensors. - MIT License</a></li>
                     <li><a href="https://github.com/Sensirion/arduino-sht">arduino-sht - An Arduino library for reading the SHT3x family of temperature and humidity sensors. - BSD-3-Clause License</a></li>
                     <li><a href="https://github.com/Bodmer/TFT_eSPI">Arduino and PlatformIO IDE compatible TFT library optimised for the Raspberry Pi Pico (RP2040), STM32, ESP8266 and ESP32 that supports different driver chips - Mixed licenses: MIT, BSD, FreeBSD</a></li>
+                    <li><a href="https://github.com/kosme/arduinoFFT">Fast Fourier Transform for Arduino. - GPL 3.0 License</a></li>
+                    <li><a href="https://github.com/muwerk/mufonts">A collection of fonts compatible with Adafruit GFX library. These fonts were developed when creating various samples for mupplet display code. - MIT License</a></li>
+                    <li><a href="https://github.com/Stuk/jszip">A library for creating, reading and editing .zip files with JavaScript, with a lovely and simple API. - MIT License</a></li>
+                    <li><a href="https://github.com/Stuk/jszip-utils">A collection of cross-browser utilities to go along with JSZip. - MIT License</a></li>
+                    <li><a href="https://github.com/eligrey/FileSaver.js">FileSaver.js is the solution to saving files on the client-side. - MIT License</a></li>
+                    <li><a href="https://github.com/knolleary/pubsubclient">This library provides a client for doing simple publish/subscribe messaging with a server that supports MQTT. - MIT License</a></li>
                 </ul>
             </div>
         </main>
-  
+
         <!-- Footer -->
         <footer class="footer mt-auto py-3">
             <div class="container">
                 <hr />
-                <span class="text-muted">(C) 2019 - 2021 by Andreas Merkle (web@blue-andi.de)</span><br />
+                <span class="text-muted">(C) 2019 - 2023 Andreas Merkle (web@blue-andi.de)</span><br />
                 <span class="text-muted"><a href="https://github.com/BlueAndi/esp-rgb-led-matrix/blob/master/LICENSE">MIT License</a></span>
             </div>
         </footer>
 
         <!-- jQuery, and Bootstrap JS bundle -->
-        <script type="text/javascript" src="/js/jquery-3.5.1.slim.min.js"></script>
+        <script type="text/javascript" src="/js/jquery-3.6.3.slim.min.js"></script>
         <script type="text/javascript" src="/js/bootstrap.bundle.min.js"></script>
         <!-- Pixelix menu -->
         <script type="text/javascript" src="/js/menu.js"></script>
 
         <script>
             $(document).ready(function() {
-                menu.create("menu");
+                menu.create("menu", menu.captivePortal);
             });
         </script>
     </body>

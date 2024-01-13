@@ -1,6 +1,6 @@
 /* MIT License
  *
- * Copyright (c) 2019 - 2021 Andreas Merkle <web@blue-andi.de>
+ * Copyright (c) 2019 - 2023 Andreas Merkle <web@blue-andi.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -33,8 +33,8 @@
  * @{
  */
 
-#ifndef __DISPLAYMGR_H__
-#define __DISPLAYMGR_H__
+#ifndef DISPLAYMGR_H
+#define DISPLAYMGR_H
 
 /******************************************************************************
  * Compile Switches
@@ -45,16 +45,16 @@
  *****************************************************************************/
 #include <stdint.h>
 #include <Board.h>
-#include <Canvas.h>
 #include <TextWidget.h>
 #include <SimpleTimer.hpp>
 #include <FadeLinear.h>
 #include <FadeMoveX.h>
 #include <FadeMoveY.h>
 #include <Mutex.hpp>
+#include <YAGfxBitmap.h>
 
 #include "IPluginMaintenance.hpp"
-#include "Slot.h"
+#include "SlotList.h"
 
 /******************************************************************************
  * Macros
@@ -150,7 +150,7 @@ public:
      *
      * @return Returns slot id. If it fails, it will return SLOT_ID_INVALID.
      */
-    uint8_t installPlugin(IPluginMaintenance* plugin, uint8_t slotId = SLOT_ID_INVALID);
+    uint8_t installPlugin(IPluginMaintenance* plugin, uint8_t slotId = SlotList::SLOT_ID_INVALID);
 
     /**
      * Remove plugin from slot.
@@ -198,16 +198,49 @@ public:
     IPluginMaintenance* getPluginInSlot(uint8_t slotId);
 
     /**
-     * Activate a specific plugin immediately.
-     *
-     * @param[in] plugin    Plugin which to activate
+     * Get slot which is marked sticky.
+     * 
+     * @return Id of sticky slot. If no slot is sticky, it will return SLOT_ID_INVALID.
      */
-    void activatePlugin(IPluginMaintenance* plugin);
+    uint8_t getStickySlot() const;
+
+    /**
+     * Set slot sticky. Only one slot can be sticky!
+     * If a different slot is already sticky, the sticky flag will be moved.
+     * 
+     * If slot is empty or the plugin is disabled, it will fail.
+     * 
+     * Use SLOT_ID_INVALID to clear the sticky flag. Recommended: clearSticky()
+     * 
+     * @param[in]   slotId  The id of the slot which to set sticky.
+     * 
+     * @return If successful it will return true otherwise false.
+     */
+    bool setSlotSticky(uint8_t slotId);
+
+    /**
+     * Removes the sticky flag.
+     */
+    void clearSticky();
+
+    /**
+     * Activate the slot with the given id.
+     * If a different slot is marked sticky, it will fail.
+     * If no enabled plugin is in the slot, it will fail.
+     * 
+     * @param[in] slotId    Id of the slot which to activate.
+     */
+    bool activateSlot(uint8_t slotId);
 
     /**
      * Activate next slot.
      */
     void activateNextSlot();
+
+    /**
+     * Activate previous slot.
+     */
+    void activatePreviousSlot();
 
     /**
      * Activate next fade effect.
@@ -287,60 +320,96 @@ public:
      *
      * @return Max. number of display slots.
      */
-    uint8_t getMaxSlots() const
-    {
-        return m_maxSlots;
-    }
+    uint8_t getMaxSlots() const;
 
-    /** Invalid slot id. */
-    static const uint8_t        SLOT_ID_INVALID     = UINT8_MAX;
+    /**
+     * Set network connection status.
+     * 
+     * @param[in] isConnected   Set to true for a established network connection, otherwise false.
+     */
+    void setNetworkStatus(bool isConnected);
 
-    /** Task stack size in bytes */
-    static const uint32_t       TASK_STACKE_SIZE    = 4096U;
+    /**
+     * Power display off.
+     */
+    void displayOff();
 
-    /** Task period in ms */
-    static const uint32_t       TASK_PERIOD         = 20U;
+    /**
+     * Power display on.
+     */
+    void displayOn();
 
-    /** MCU core where the task shall run */
-    static const BaseType_t     TASK_RUN_CORE       = 1;
-
-    /** Task priority, note Arduino loop and AsyncTcp have lower priorities. */
-    static const UBaseType_t    TASK_PRIORITY       = 4U;
-
-    /** If no ambient light sensor is available, the default brightness shall be 40%. */
-    static const uint8_t        BRIGHTNESS_DEFAULT  = (UINT8_MAX * 40U) / 100U;
+    /**
+     * Is the display powered on?
+     * 
+     * @return If the display is powered on, it will return true otherwise false.
+     */
+    bool isDisplayOn() const;
 
 private:
 
-    /** Mutex to lock/unlock display update. */
-    MutexRecursive      m_mutex;
+    /** The process task stack size in bytes */
+    static const uint32_t       PROCESS_TASK_STACK_SIZE = 4096U;
 
-    /** Display update task handle */
-    TaskHandle_t        m_taskHandle;
+    /** The process task period in ms. */
+    static const uint32_t       PROCESS_TASK_PERIOD     = 100U;
 
-    /** Flag to signal the task to exit. */
-    bool                m_taskExit;
+    /** The process task shall run on the APP MCU core. */
+    static const BaseType_t     PROCESS_TASK_RUN_CORE   = APP_CPU_NUM;
 
-    /** Binary semaphore used to signal the task exit. */
-    SemaphoreHandle_t   m_xSemaphore;
+    /** The process task priority shall be equal than the Arduino loop task priority. */
+    static const UBaseType_t    PROCESS_TASK_PRIORITY   = 1U;
+
+    /** The update task stack size in bytes */
+    static const uint32_t       UPDATE_TASK_STACK_SIZE  = 4096U;
+
+    /** The update task period in ms. */
+    static const uint32_t       UPDATE_TASK_PERIOD      = 20U;
+
+    /** The update task shall run on the MCU core with less load. */
+    static const BaseType_t     UPDATE_TASK_RUN_CORE    = tskNO_AFFINITY;
+
+    /** The update task priority shall be higher than the other application tasks. */
+    static const UBaseType_t    UPDATE_TASK_PRIORITY    = 4U;
+
+    /** Mutex to protect concurrent access through the public interface. */
+    mutable MutexRecursive      m_mutexInterf;
+
+    /** Mutex to protect the display update against concurrent access. */
+    mutable MutexRecursive      m_mutexUpdate;
+
+    /** Process task handle */
+    TaskHandle_t                m_processTaskHandle;
+
+    /** Flag to signal the process task to exit. */
+    bool                        m_processTaskExit;
+
+    /** Binary semaphore used to signal the process task exited. */
+    SemaphoreHandle_t           m_processTaskSemaphore;
+
+    /** Update task handle */
+    TaskHandle_t                m_updateTaskHandle;
+
+    /** Flag to signal the update task to exit. */
+    bool                        m_updateTaskExit;
+
+    /** Binary semaphore used to signal the update task exited. */
+    SemaphoreHandle_t           m_updateTaskSemaphore;
 
     /** List of all slots with their connected plugins. */
-    Slot*               m_slots;
-
-    /** Max. number of slots. */
-    uint8_t             m_maxSlots;
+    SlotList                    m_slotList;
 
     /** Current selected slot. */
-    uint8_t             m_selectedSlot;
+    uint8_t                     m_selectedSlotId;
 
     /** Current selected plugin, which is active shown. */
-    IPluginMaintenance* m_selectedPlugin;
+    IPluginMaintenance*         m_selectedPlugin;
 
     /** Plugin which is requested to be activated immediately. */
-    IPluginMaintenance* m_requestedPlugin;
+    IPluginMaintenance*         m_requestedPlugin;
 
     /** Timer, used for changing the slot after a specific duration. */
-    SimpleTimer         m_slotTimer;
+    SimpleTimer                 m_slotTimer;
 
     /** Display fade state */
     enum FadeState
@@ -363,14 +432,15 @@ private:
      * the old plugin out and from the new plugin in.
      */
     FadeState           m_displayFadeState;
-    Canvas*             m_currCanvas;                   /**< Points to the current canvas, used to update the display. */
-    Canvas*             m_framebuffers[FB_ID_MAX];      /**< Two framebuffers, which will contain the old and the new plugin content. */
+    YAGfxBitmap*        m_selectedFrameBuffer;          /**< Points to the current framebuffer, used to update the display. */
+    YAGfxDynamicBitmap  m_framebuffers[FB_ID_MAX];      /**< Two framebuffers, which will contain the old and the new plugin content. */
     FadeLinear          m_fadeLinearEffect;             /**< Linear fade effect. */
     FadeMoveX           m_fadeMoveXEffect;              /**< Moving along x-axis fade effect. */
     FadeMoveY           m_fadeMoveYEffect;              /**< Moving along y-axis fade effect. */
     IFadeEffect*        m_fadeEffect;                   /**< The fade effect itself. */
     FadeEffect          m_fadeEffectIndex;              /**< Fade effect index to determine the next fade effect. */
     bool                m_fadeEffectUpdate;             /**< Flag to indicate that the fadeEffect was updated. */
+    bool                m_isNetworkConnected;           /**< Is a network connection established? */
 
     /**
      * Constructs the display manager.
@@ -396,6 +466,15 @@ private:
     uint8_t nextSlot(uint8_t slotId);
 
     /**
+     * Schedule previous slot with a installed and enabled plugin.
+     *
+     * @param[in] slotId    Id of current slot
+     *
+     * @return Id of previous slot
+     */
+    uint8_t previousSlot(uint8_t slotId);
+
+    /**
      * Start fade effect.
      */
     void startFadeOut();
@@ -416,27 +495,56 @@ private:
     void process(void);
 
     /**
+     * Process the slots. This shall be called periodically in
+     * a higher period than the DEFAULT_PERIOD.
+     *
+     * It will handle which slot to show on the display.
+     */
+    void update(void);
+
+    /**
+     * Create the process task which is responsible to process all plugins.
+     * 
+     * @return If successful it will return true otherwise false.
+     */
+    bool createProcessTask();
+
+    /**
+     * Destroy the process task gracefully.
+     */
+    void destroyProcessTask();
+
+    /**
+     * Create the update task which is responsible to update the display content.
+     * 
+     * @return If successful it will return true otherwise false.
+     */
+    bool createUpdateTask();
+
+    /**
+     * Destroy the update task gracefully.
+     */
+    void destroyUpdateTask();
+
+    /**
+     * Display update task is responsible to refresh the display content.
+     *
+     * @param[in]   parameters  Task pParameters
+     */
+    static void processTask(void* parameters);
+
+    /**
      * Display update task is responsible to refresh the display content.
      *
      * @param[in]   parameters  Task pParameters
      */
     static void updateTask(void* parameters);
-
-    /**
-     * Load display slot configuration from persistent memory.
-     */
-    void load();
-
-    /**
-     * Save display slot configuration to persistent memory.
-     */
-    void save();
 };
 
 /******************************************************************************
  * Functions
  *****************************************************************************/
 
-#endif  /* __DISPLAYMGR_H__ */
+#endif  /* DISPLAYMGR_H */
 
 /** @} */

@@ -1,6 +1,6 @@
 /* MIT License
  *
- * Copyright (c) 2019 - 2021 Andreas Merkle <web@blue-andi.de>
+ * Copyright (c) 2019 - 2023 Andreas Merkle <web@blue-andi.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -54,6 +54,15 @@
  * Local Variables
  *****************************************************************************/
 
+/* Delimiter of websocket parameters */
+const char*    WsCmd::DELIMITER = ";";
+
+/* Positive response code */
+const char*    WsCmd::ACK       = "ACK";
+
+/* Negative response code. */
+const char*    WsCmd::NACK      = "NACK";
+
 /******************************************************************************
  * Public Methods
  *****************************************************************************/
@@ -61,6 +70,52 @@
 /******************************************************************************
  * Protected Methods
  *****************************************************************************/
+
+void WsCmd::sendPositiveResponse(AsyncWebSocket* server, AsyncWebSocketClient* client, const char* msg)
+{
+    if ((nullptr != server) &&
+        (nullptr != client))
+    {
+        String rsp = ACK;
+
+        if ((nullptr != msg) &&
+            ('\0' != msg[0U]))
+        {
+            rsp += DELIMITER;
+            rsp += msg;
+        }
+
+        server->text(client->id(), rsp);
+    }
+}
+
+void WsCmd::sendPositiveResponse(AsyncWebSocket* server, AsyncWebSocketClient* client)
+{
+    sendPositiveResponse(server, client, nullptr);
+}
+
+void WsCmd::sendNegativeResponse(AsyncWebSocket* server, AsyncWebSocketClient* client, const char* msg)
+{
+    if ((nullptr != server) &&
+        (nullptr != client))
+    {
+        String rsp = NACK;
+
+        rsp += DELIMITER;
+
+        if ((nullptr != msg) &&
+            ('\0' != msg[0U]))
+        {
+            rsp += msg;
+        }
+        else
+        {
+            rsp += "\"Unknown.\"";
+        }
+
+        server->text(client->id(), rsp);
+    }
+}
 
 /******************************************************************************
  * Private Methods

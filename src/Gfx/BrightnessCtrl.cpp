@@ -1,6 +1,6 @@
 /* MIT License
  *
- * Copyright (c) 2019 - 2021 Andreas Merkle <web@blue-andi.de>
+ * Copyright (c) 2019 - 2023 Andreas Merkle <web@blue-andi.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -62,13 +62,16 @@
  * Public Methods
  *****************************************************************************/
 
-void BrightnessCtrl::init(IDisplay& display)
+void BrightnessCtrl::init(IDisplay& display, uint8_t minBrightness, uint8_t maxBrightness)
 {
     SensorDataProvider& sensorDataProv  = SensorDataProvider::getInstance();
     uint8_t             sensorIdx       = 0U;
     uint8_t             channelIdx      = 0U;
     
-    m_display = &display;
+    m_display           = &display;
+    m_minBrightness     = minBrightness;
+    m_maxBrightness     = maxBrightness;
+    m_brightnessGoal    = minBrightness;
 
     /* Find a sensor channel, which provides the current illuminance. */
     if (true == sensorDataProv.find(sensorIdx, channelIdx, ISensorChannel::TYPE_ILLUMINANCE_LUX, ISensorChannel::DATA_TYPE_FLOAT32))
@@ -92,8 +95,6 @@ void BrightnessCtrl::init(IDisplay& display)
         setAmbientLight(m_recentShortTermAverage.getValue());
         updateBrightnessGoal();
     }
-
-    return;
 }
 
 bool BrightnessCtrl::enable(bool state)
@@ -129,7 +130,7 @@ bool BrightnessCtrl::enable(bool state)
             m_autoBrightnessTimer.start(AUTO_ADJUST_PERIOD);
 
             /* Start debouncing the ambient light sensor */
-            if (AMBIENT_LIGHT_DIRECTION_BRIGTHER == m_direction)
+            if (AMBIENT_LIGHT_DIRECTION_BRIGHTER == m_direction)
             {
                 m_lightSensorDebounceTimer.start(BRIGHTENING_LIGHT_DEBOUNCE);
             }
@@ -175,12 +176,12 @@ void BrightnessCtrl::process()
         if ((m_brighteningThreshold < m_recentShortTermAverage.getValue()) &&
             (m_brighteningThreshold < m_recentLongTermAverage.getValue()))
         {
-            if (AMBIENT_LIGHT_DIRECTION_BRIGTHER != m_direction)
+            if (AMBIENT_LIGHT_DIRECTION_BRIGHTER != m_direction)
             {
-                m_direction = AMBIENT_LIGHT_DIRECTION_BRIGTHER;
+                m_direction = AMBIENT_LIGHT_DIRECTION_BRIGHTER;
                 m_lightSensorDebounceTimer.start(BRIGHTENING_LIGHT_DEBOUNCE);
 
-                LOG_INFO("Light: Its getting brigther.");
+                LOG_INFO("Light: Its getting brighter.");
             }
             else if ((true == m_lightSensorDebounceTimer.isTimerRunning()) &&
                      (true == m_lightSensorDebounceTimer.isTimeout()))
@@ -224,15 +225,20 @@ void BrightnessCtrl::setBrightness(uint8_t level)
 {
     if (false == isEnabled())
     {
-        m_brightness = level;
+        if (m_minBrightness > level)
+        {
+            m_brightness = m_minBrightness;
+        }
+        else
+        {
+            m_brightness = level;
+        }
 
         if (nullptr != m_display)
         {
             m_display->setBrightness(m_brightness);
         }
     }
-
-    return;
 }
 
 /******************************************************************************
@@ -248,16 +254,16 @@ BrightnessCtrl::BrightnessCtrl() :
     m_illuminanceChannel(nullptr),
     m_autoBrightnessTimer(),
     m_brightness(0U),
-    m_minBrightness((UINT8_MAX * 10U) / 100U),  /* 10% */
-    m_maxBrightness(UINT8_MAX),                 /* 100% */
+    m_minBrightness(0U),
+    m_maxBrightness(0U),
     m_recentShortTermAverage(SHORT_TERM_AVG_LIGHT_TIME_CONST, 0.0F),
     m_recentLongTermAverage(LONG_TERM_AVG_LIGHT_TIME_CONST, 0.0F),
     m_brighteningThreshold(0.0F),
     m_darkeningThreshold(0.0F),
     m_ambientLight(0.0F),
     m_lightSensorDebounceTimer(),
-    m_direction(AMBIENT_LIGHT_DIRECTION_BRIGTHER),
-    m_brightnessGoal(m_minBrightness)
+    m_direction(AMBIENT_LIGHT_DIRECTION_BRIGHTER),
+    m_brightnessGoal(0U)
 {
 }
 
@@ -282,12 +288,10 @@ float BrightnessCtrl::getNormalizedLight()
 void BrightnessCtrl::setAmbientLight(float light)
 {
     m_ambientLight          = light;
-    m_brighteningThreshold  = m_ambientLight * (1.0f + BRIGHTENING_LIGHT_HYSTERESIS);
-    m_darkeningThreshold    = m_ambientLight * (1.0f - DARKENING_LIGHT_HYSTERESIS);
+    m_brighteningThreshold  = m_ambientLight * (1.0F + BRIGHTENING_LIGHT_HYSTERESIS);
+    m_darkeningThreshold    = m_ambientLight * (1.0F - DARKENING_LIGHT_HYSTERESIS);
 
-    LOG_INFO("Light: %0.3f (b-thr %0.3f < x < d-thr %0.3f)", m_ambientLight, m_brighteningThreshold, m_darkeningThreshold);
-
-    return;
+    LOG_DEBUG("Light: %0.3f (b-thr %0.3f < x < d-thr %0.3f)", m_ambientLight, m_brighteningThreshold, m_darkeningThreshold);
 }
 
 void BrightnessCtrl::applyLightSensorMeasurement(uint32_t dTime, float light)
@@ -295,21 +299,18 @@ void BrightnessCtrl::applyLightSensorMeasurement(uint32_t dTime, float light)
     (void)m_recentShortTermAverage.calc(light, dTime);
     (void)m_recentLongTermAverage.calc(light, dTime);
 
-    //LOG_INFO("Light: m %0.3f s-avg %0.3f l-avg %0.3f", light, m_recentShortTermAverage, m_recentLongTermAverage);
-
-    return;
+    /* LOG_DEBUG("Light: m %0.3f s-avg %0.3f l-avg %0.3f", light, m_recentShortTermAverage, m_recentLongTermAverage); */
 }
 
 void BrightnessCtrl::updateBrightnessGoal()
 {
-    uint8_t     BRIGHTNESS_DYN_RANGE    = m_maxBrightness - m_minBrightness;
-    float       fBrightness             = static_cast<float>(m_minBrightness) + ( static_cast<float>(BRIGHTNESS_DYN_RANGE) * m_ambientLight );
+    float   fBrightnessDynamicRange = static_cast<float>(m_maxBrightness - m_minBrightness);
+    float   fMinBrightness          = static_cast<float>(m_minBrightness);
+    float   fBrightness             = fMinBrightness + (fBrightnessDynamicRange * m_ambientLight );
 
     m_brightnessGoal = static_cast<uint8_t>(fBrightness);
 
-    LOG_INFO("Change brightness goal to %u.", m_brightnessGoal);
-
-    return;
+    LOG_DEBUG("Change brightness goal to %u.", m_brightnessGoal);
 }
 
 void BrightnessCtrl::updateBrightness()
@@ -352,8 +353,6 @@ void BrightnessCtrl::updateBrightness()
     {
         ;
     }
-
-    return;
 }
 
 /******************************************************************************

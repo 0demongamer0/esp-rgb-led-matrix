@@ -1,6 +1,6 @@
 /* MIT License
  *
- * Copyright (c) 2019 - 2021 Andreas Merkle <web@blue-andi.de>
+ * Copyright (c) 2019 - 2023 Andreas Merkle <web@blue-andi.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -33,7 +33,9 @@
  * Includes
  *****************************************************************************/
 #include "WsCmdUninstall.h"
+#include "DisplayMgr.h"
 #include "PluginMgr.h"
+#include "SlotList.h"
 
 #include <Util.h>
 #include <Logging.h>
@@ -73,7 +75,7 @@ void WsCmdUninstall::execute(AsyncWebSocket* server, AsyncWebSocketClient* clien
     /* Any error happended? */
     if (true == m_isError)
     {
-        server->text(client->id(), "NACK;\"Parameter invalid.\"");
+        sendNegativeResponse(server, client, "\"Parameter invalid.\"");
     }
     else
     {
@@ -82,38 +84,34 @@ void WsCmdUninstall::execute(AsyncWebSocket* server, AsyncWebSocketClient* clien
 
         if (nullptr == plugin)
         {
-            rsp = "NACK;\"Slot is empty.\"";
+            sendNegativeResponse(server, client, "\"Slot is empty.\"");
         }
         else if (true == DisplayMgr::getInstance().isSlotLocked(m_slotId))
         {
-            rsp = "NACK;\"Slot is locked.\"";
+            sendNegativeResponse(server, client, "\"Slot is locked.\"");
         }
         else if (false == PluginMgr::getInstance().uninstall(plugin))
         {
-            rsp = "NACK;\"Failed to uninstall.\"";
+            sendNegativeResponse(server, client, "\"Failed to uninstall.\"");
         }
         else
         {
             /* Save current installed plugins to persistent memory. */
             PluginMgr::getInstance().save();
 
-            rsp = "ACK";
+            sendPositiveResponse(server, client);
         }
-
-        server->text(client->id(), rsp);
     }
 
     m_isError   = false;
-    m_slotId    = DisplayMgr::SLOT_ID_INVALID;
-
-    return;
+    m_slotId    = SlotList::SLOT_ID_INVALID;
 }
 
 void WsCmdUninstall::setPar(const char* par)
 {
     if (false == m_isError)
     {
-        if (DisplayMgr::SLOT_ID_INVALID == m_slotId)
+        if (SlotList::SLOT_ID_INVALID == m_slotId)
         {
             if (false == Util::strToUInt8(String(par), m_slotId))
             {
@@ -126,8 +124,6 @@ void WsCmdUninstall::setPar(const char* par)
             m_isError = true;
         }
     }
-
-    return;
 }
 
 /******************************************************************************

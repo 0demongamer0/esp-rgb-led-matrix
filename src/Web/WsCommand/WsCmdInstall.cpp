@@ -1,6 +1,6 @@
 /* MIT License
  *
- * Copyright (c) 2019 - 2021 Andreas Merkle <web@blue-andi.de>
+ * Copyright (c) 2019 - 2023 Andreas Merkle <web@blue-andi.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -34,6 +34,7 @@
  *****************************************************************************/
 #include "WsCmdInstall.h"
 #include "PluginMgr.h"
+#include "DisplayMgr.h"
 
 #include <Util.h>
 
@@ -72,38 +73,36 @@ void WsCmdInstall::execute(AsyncWebSocket* server, AsyncWebSocketClient* client)
     /* Any error happended? */
     if (true == m_isError)
     {
-        server->text(client->id(), "NACK;\"Parameter invalid.\"");
+        sendNegativeResponse(server, client, "\"Parameter invalid.\"");
     }
     else
     {
-        String              rsp         = "ACK";
-        const char          DELIMITER   = ';';
-        IPluginMaintenance* plugin      = PluginMgr::getInstance().install(m_pluginName);
+        String              msg;
+        IPluginMaintenance* plugin  = PluginMgr::getInstance().install(m_pluginName);
 
         if (nullptr == plugin)
         {
-            rsp = "NACK;\"Plugin not found.\"";
+            sendNegativeResponse(server, client, "\"Plugin not found.\"");
         }
         else
         {
-            rsp += DELIMITER;
-            rsp += DisplayMgr::getInstance().getSlotIdByPluginUID(plugin->getUID());
-            rsp += DELIMITER;
-            rsp += plugin->getUID();
+            preparePositiveResponse(msg);
+
+            msg += DisplayMgr::getInstance().getSlotIdByPluginUID(plugin->getUID());
+            msg += DELIMITER;
+            msg += plugin->getUID();
 
             plugin->enable();
 
             /* Save current installed plugins to persistent memory. */
             PluginMgr::getInstance().save();
-        }
 
-        server->text(client->id(), rsp);
+            sendResponse(server, client, msg);
+        }
     }
 
     m_isError = false;
     m_pluginName.clear();
-
-    return;
 }
 
 void WsCmdInstall::setPar(const char* par)
@@ -121,8 +120,6 @@ void WsCmdInstall::setPar(const char* par)
     {
         m_isError = true;
     }
-
-    return;
 }
 
 /******************************************************************************

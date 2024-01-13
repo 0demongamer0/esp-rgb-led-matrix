@@ -1,6 +1,6 @@
 /* MIT License
  *
- * Copyright (c) 2019 - 2021 Andreas Merkle <web@blue-andi.de>
+ * Copyright (c) 2019 - 2023 Andreas Merkle <web@blue-andi.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -33,7 +33,7 @@
  * Includes
  *****************************************************************************/
 #include "WsCmdButton.h"
-#include "DisplayMgr.h"
+#include "ButtonActions.h"
 
 #include <Util.h>
 
@@ -72,29 +72,30 @@ void WsCmdButton::execute(AsyncWebSocket* server, AsyncWebSocketClient* client)
     /* Any error happended? */
     if (true == m_isError)
     {
-        server->text(client->id(), "NACK;\"Parameter invalid.\"");
+        sendNegativeResponse(server, client, "\"Parameter invalid.\"");
     }
     else
     {
-        String rsp = "ACK";
+        executeAction(m_actionId);
 
-        DisplayMgr::getInstance().activateNextSlot();
-
-        server->text(client->id(), rsp);
+        sendPositiveResponse(server, client);
     }
 
     m_isError = false;
-
-    return;
 }
 
 void WsCmdButton::setPar(const char* par)
 {
-    UTIL_NOT_USED(par);
+    uint8_t actionId;
 
-    m_isError = true;
-
-    return;
+    if (false == Util::strToUInt8(par, actionId))
+    {
+        m_isError = true;
+    }
+    else
+    {
+        m_actionId = static_cast<ButtonActionId>(actionId);
+    }
 }
 
 /******************************************************************************

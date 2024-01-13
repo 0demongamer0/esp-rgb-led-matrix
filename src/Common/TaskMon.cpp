@@ -1,6 +1,6 @@
 /* MIT License
  *
- * Copyright (c) 2019 - 2021 Andreas Merkle <web@blue-andi.de>
+ * Copyright (c) 2019 - 2023 Andreas Merkle <web@blue-andi.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -79,7 +79,7 @@ void TaskMon::process()
     if (true == isProcessingTime)
     {
         UBaseType_t     numOfTasks      = uxTaskGetNumberOfTasks();
-        TaskStatus_t*   taskStatus      = new TaskStatus_t[numOfTasks];
+        TaskStatus_t*   taskStatus      = new(std::nothrow) TaskStatus_t[numOfTasks];
 
         if (nullptr != taskStatus)
         {
@@ -121,15 +121,15 @@ void TaskMon::process()
                 }
 
 #if configTASKLIST_INCLUDE_COREID
-                LOG_INFO("Task \"%s\": c %d, p %2u, %s, %3u%%, stack high water mark: %u",
-                    taskStatus[index].xCoreID,
+                LOG_DEBUG("Task \"%s\": c %d, p %2u, %s, %3u%%, stack high water mark: %u",
                     fillUpSpaces(taskStatus[index].pcTaskName, taskNameMaxLen).c_str(),
+                    taskStatus[index].xCoreID,
                     taskStatus[index].uxCurrentPriority,
                     fillUpSpaces(taskState2Str(taskStatus[index].eCurrentState).c_str(), taskStateMaxLen).c_str(),
                     statsAsPercentage,
                     taskStatus[index].usStackHighWaterMark);
     #else
-                LOG_INFO("Task \"%s\": p %2u, %s, %3u%%, stack high water mark: %u",
+                LOG_DEBUG("Task \"%s\": p %2u, %s, %3u%%, stack high water mark: %u",
                     fillUpSpaces(taskStatus[index].pcTaskName, taskNameMaxLen).c_str(),
                     taskStatus[index].uxCurrentPriority,
                     fillUpSpaces(taskState2Str(taskStatus[index].eCurrentState).c_str(), taskStateMaxLen).c_str(),
@@ -144,9 +144,11 @@ void TaskMon::process()
 #endif  /* configUSE_TRACE_FACILITY */
 }
 
-String TaskMon::taskState2Str(eTaskState state)
+#if configUSE_TRACE_FACILITY
+
+const char* TaskMon::taskState2Str(eTaskState state)
 {
-    String name;
+    const char* name = "";
 
     switch(state)
     {
@@ -199,6 +201,8 @@ String TaskMon::fillUpSpaces(const char* str, size_t len)
 
     return result;
 }
+
+#endif  /* configUSE_TRACE_FACILITY */
 
 /******************************************************************************
  * Protected Methods

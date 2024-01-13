@@ -1,6 +1,6 @@
 /* MIT License
  *
- * Copyright (c) 2019 - 2021 Andreas Merkle <web@blue-andi.de>
+ * Copyright (c) 2019 - 2023 Andreas Merkle <web@blue-andi.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -34,6 +34,7 @@
  *****************************************************************************/
 #include "WsCmdGetDisp.h"
 #include "DisplayMgr.h"
+#include "SlotList.h"
 
 #include <Util.h>
 #include <Display.h>
@@ -73,34 +74,47 @@ void WsCmdGetDisp::execute(AsyncWebSocket* server, AsyncWebSocketClient* client)
     /* Any error happended? */
     if (true == m_isError)
     {
-        server->text(client->id(), "NACK;\"Parameter invalid.\"");
+        sendNegativeResponse(server, client, "\"Parameter invalid.\"");
     }
     else
     {
-        uint32_t    index       = 0U;
-        String      rsp         = "ACK";
-        const char  DELIMITER   = ';';
         IDisplay&   display     = Display::getInstance();
-        uint32_t    framebuffer[display.getWidth() * display.getHeight()];
-        uint8_t     slotId      = DisplayMgr::SLOT_ID_INVALID;
+        size_t      fbLength    = display.getWidth() * display.getHeight();
+        uint32_t*   framebuffer = new(std::nothrow) uint32_t[fbLength];
 
-        DisplayMgr::getInstance().getFBCopy(framebuffer, UTIL_ARRAY_NUM(framebuffer), &slotId);
-
-        rsp += DELIMITER;
-        rsp += slotId;
-
-        for(index = 0U; index <  UTIL_ARRAY_NUM(framebuffer); ++index)
+        if (nullptr == framebuffer)
         {
-            rsp += DELIMITER;
-            rsp += Util::uint32ToHex(framebuffer[index]);
+            sendNegativeResponse(server, client, "\"Internal error.\"");
         }
+        else
+        {
+            uint32_t    index       = 0U;
+            String      msg;
+            uint8_t     slotId      = SlotList::SLOT_ID_INVALID;
 
-        server->text(client->id(), rsp);
+            DisplayMgr::getInstance().getFBCopy(framebuffer, fbLength, &slotId);
+
+            preparePositiveResponse(msg);
+
+            msg += slotId;
+            msg += DELIMITER;
+            msg += display.getWidth();
+            msg += DELIMITER;
+            msg += display.getHeight();
+
+            for(index = 0U; index <  fbLength; ++index)
+            {
+                msg += DELIMITER;
+                msg += Util::uint32ToHex(framebuffer[index]);
+            }
+
+            delete[] framebuffer;
+            
+            sendResponse(server, client, msg);
+        }
     }
 
     m_isError = false;
-
-    return;
 }
 
 void WsCmdGetDisp::setPar(const char* par)
@@ -108,8 +122,6 @@ void WsCmdGetDisp::setPar(const char* par)
     UTIL_NOT_USED(par);
 
     m_isError = true;
-
-    return;
 }
 
 /******************************************************************************

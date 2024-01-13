@@ -1,6 +1,6 @@
 /* MIT License
  *
- * Copyright (c) 2019 - 2021 Andreas Merkle <web@blue-andi.de>
+ * Copyright (c) 2019 - 2023 Andreas Merkle <web@blue-andi.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -33,8 +33,8 @@
  * @{
  */
 
-#ifndef __SLOT_H__
-#define __SLOT_H__
+#ifndef SLOT_H
+#define SLOT_H
 
 /******************************************************************************
  * Compile Switches
@@ -71,6 +71,20 @@ public:
      * Destroys slot.
      */
     ~Slot();
+
+    /**
+     * Constructs a slot by copy.
+     * 
+     * @param[in] slot  The slot which to copy.
+     */
+    Slot(const Slot& slot);
+
+    /**
+     * Assign a slot.
+     * 
+     * @param[in] slot  The slot which to assign.
+     */
+    Slot& operator=(const Slot& slot);
 
     /**
      * Get plugin which is plugged in.
@@ -136,15 +150,12 @@ private:
     IPluginMaintenance* m_plugin;   /**< Plugged in slot */
     uint32_t            m_duration; /**< Duration in ms, how long the plugin shall be active. */
     bool                m_isLocked; /**< Is slot locked or not. */
-
-    Slot(const Slot& slot);
-    Slot& operator=(const Slot& slot);
 };
 
 /******************************************************************************
  * Functions
  *****************************************************************************/
 
-#endif  /* __SLOT_H__ */
+#endif  /* SLOT_H */
 
 /** @} */

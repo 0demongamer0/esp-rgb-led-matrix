@@ -1,6 +1,6 @@
 /* MIT License
  *
- * Copyright (c) 2019 - 2021 Andreas Merkle <web@blue-andi.de>
+ * Copyright (c) 2019 - 2023 Andreas Merkle <web@blue-andi.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -73,12 +73,11 @@ void WsCmdBrightness::execute(AsyncWebSocket* server, AsyncWebSocketClient* clie
     /* Any error happended? */
     if (true == m_isError)
     {
-        server->text(client->id(), "NACK;\"Parameter invalid.\"");
+        sendNegativeResponse(server, client, "\"Parameter invalid.\"");
     }
     else
     {
-        String      rsp         = "ACK";
-        const char  DELIMITER   = ';';
+        String msg;
 
         if (1U == m_parCnt)
         {
@@ -94,18 +93,17 @@ void WsCmdBrightness::execute(AsyncWebSocket* server, AsyncWebSocketClient* clie
             ;
         }
 
-        rsp += DELIMITER;
-        rsp += DisplayMgr::getInstance().getBrightness();
-        rsp += DELIMITER;
-        rsp += (true == DisplayMgr::getInstance().getAutoBrightnessAdjustment()) ? 1 : 0;
+        preparePositiveResponse(msg);
 
-        server->text(client->id(), rsp);
+        msg += DisplayMgr::getInstance().getBrightness();
+        msg += DELIMITER;
+        msg += (true == DisplayMgr::getInstance().getAutoBrightnessAdjustment()) ? 1 : 0;
+
+        sendResponse(server, client, msg);
     }
 
     m_isError = false;
     m_parCnt = 0U;
-
-    return;
 }
 
 void WsCmdBrightness::setPar(const char* par)
@@ -141,8 +139,6 @@ void WsCmdBrightness::setPar(const char* par)
     }
 
     ++m_parCnt;
-
-    return;
 }
 
 /******************************************************************************

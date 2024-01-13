@@ -8,22 +8,6 @@
         <link rel="stylesheet" type="text/css" href="/style/bootstrap.min.css" />
         <link rel="stylesheet" type="text/css" href="/style/sticky-footer-navbar.css" />
         <link rel="stylesheet" type="text/css" href="/style/style.css" />
-        <style>
-            .bd-placeholder-img {
-                font-size: 1.125rem;
-                text-anchor: middle;
-                -webkit-user-select: none;
-                -moz-user-select: none;
-                -ms-user-select: none;
-                user-select: none;
-            }
-
-            @media (min-width: 768px) {
-                .bd-placeholder-img-lg {
-                    font-size: 3.5rem;
-                }
-            }
-        </style>
 
         <title>PIXELIX</title>
         <link rel="shortcut icon" type="image/png" href="/favicon.png" />
@@ -47,43 +31,105 @@
 
         <!-- Begin page content -->
         <main role="main" class="flex-shrink-0">
-            <div class="container">
-                <h1 class="mt-5">Update</h1>
-                <p>Upload <u>~FIRMWARE_FILENAME~</u> file for software update or <u>~FILESYSTEM_FILENAME~</u> for updating the filesystem.</p>
-                <div class="input-group">
-                    <div class="custom-file">
-                        <input type="file" class="custom-file-input" id="inputFile">
-                        <label class="custom-file-label" for="inputFile">Choose file</label>
+            <!-- Dialog -->
+            <div class="modal fade" id="modalDialog" tabindex="-1" aria-labelledby="modalTitle" aria-hidden="true" data-keyboard="false" data-backdrop="static">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header" id="dialogHeader">
+                            <h5 class="modal-title" id="dialogTitle"></h5>
+                        </div>
+                        <div class="modal-body text-dark" id="dialogBody">
+                        </div>
+                        <div class="modal-footer text-dark" id="dialogFooter">
+                        </div>
                     </div>
-                    <div class="input-group-append">
-                        <button class="btn btn-light" type="button" onclick="upload();">Upload</button>
-                    </div>
-                </div>
-                <div class="progress">
-                    <div id="progressBar" class="progress-bar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
                 </div>
             </div>
+            <!-- Main view -->
+            <div class="container">
+                <h1 class="mt-5">Update</h1>
+
+                <ul class="nav nav-tabs" role="tablist">
+                    <li class="nav-item" role="presentation"><a class="nav-link active" id="update-tab" data-toggle="tab" role="tab" href="#update"  aria-controls="update" aria-selected="true">Update</a></li>
+                    <li class="nav-item" role="presentation"><a class="nav-link" id="backup-tab" data-toggle="tab" role="tab" href="#backup" aria-controls="backup" aria-selected="false">Backup</a></li>
+                    <li class="nav-item" role="presentation"><a class="nav-link" id="restore-tab" data-toggle="tab" role="tab" href="#restore" aria-controls="restore" aria-selected="false">Restore</a></li>
+                </ul>
+
+                <div class="tab-content" id="myTabContent">
+
+                    <div class="tab-pane fade active show" id="update" role="tabpanel" aria-labelledby="update-tab">
+                        <br />
+                        <p>Upload <u>~FIRMWARE_FILENAME~</u> file for software update or <u>~FILESYSTEM_FILENAME~</u> for updating the filesystem.</p>
+                        <p>Use multi-select to upload both at once.</p>
+                        <div class="input-group">
+                            <div class="custom-file">
+                                <input type="file" class="custom-file-input" id="inputFile" multiple="multiple" accept=".bin">
+                                <label class="custom-file-label" for="inputFile">Choose file</label>
+                            </div>
+                            <div class="input-group-append">
+                                <button class="btn btn-light" type="button" onclick="upload();">Upload</button>
+                            </div>
+                        </div>
+                        <div class="progress">
+                            <div id="progressBar" class="progress-bar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane fade" id="backup" role="tabpanel" aria-labelledby="backup-tab">
+                        <br />
+                        <p>Backup the configuration.</p>
+                        <button class="btn btn-light" id="buttonBackup" type="button" onclick="backup();">Save As</button>
+                    </div>
+
+                    <div class="tab-pane fade" id="restore" role="tabpanel" aria-labelledby="restore-tab">
+                        <br />
+                        <p>Restore the configuration.</p>
+                        <div class="input-group">
+                            <div class="custom-file">
+                                <input type="file" class="custom-file-input" id="backupFile" accept=".zip">
+                                <label class="custom-file-label" for="backupFile">Choose backup file</label>
+                            </div>
+                            <div class="input-group-append">
+                                <button class="btn btn-light" type="button" onclick="restore();">Restore</button>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+            </div>
         </main>
-  
+
         <!-- Footer -->
         <footer class="footer mt-auto py-3">
             <div class="container">
                 <hr />
-                <span class="text-muted">(C) 2019 - 2021 by Andreas Merkle (web@blue-andi.de)</span><br />
+                <span class="text-muted">(C) 2019 - 2023 Andreas Merkle (web@blue-andi.de)</span><br />
                 <span class="text-muted"><a href="https://github.com/BlueAndi/esp-rgb-led-matrix/blob/master/LICENSE">MIT License</a></span>
             </div>
         </footer>
 
         <!-- jQuery, and Bootstrap JS bundle -->
-        <script type="text/javascript" src="/js/jquery-3.5.1.slim.min.js"></script>
+        <script type="text/javascript" src="/js/jquery-3.6.3.slim.min.js"></script>
         <script type="text/javascript" src="/js/bootstrap.bundle.min.js"></script>
         <!-- Pixelix menu -->
         <script type="text/javascript" src="/js/menu.js"></script>
+        <script type="text/javascript" src="/js/pluginsSubMenu.js"></script>
         <!-- Pixelix utilities -->
         <script type="text/javascript" src="/js/utils.js"></script>
+        <script type="text/javascript" src="/js/dialog.js"></script>
+        <!-- Pixelix REST API -->
+        <script type="text/javascript" src="/js/rest.js"></script>
+        <!-- Zip library-->
+        <script type="text/javascript" src="/js/jszip.min.js"></script>
+        <script type="text/javascript" src="/js/jszip-utils.min.js"></script>
+        <script type="text/javascript" src="/js/FileSaver.min.js"></script>
 
         <!-- Custom javascript -->
         <script>
+
+            var restClient  = new pixelix.rest.Client();
+            var zip         = new JSZip();
 
             /* Disable all UI elements. */
             function disableUI() {
@@ -107,49 +153,197 @@
             }
 
             function upload() {
-                var file        = document.getElementById("inputFile").files[0];
-                var fileSize    = file.size;
+                var file        = null;
+                var fileCnt     = document.getElementById("inputFile").files.length;
+                var fileSize    = 0;
+                var index       = 0;
+                var files       = [];
+                var fileParameters  = {};
+                var fileHeaders     = {};
+
+                if (2 < fileCnt) {
+                    fileCnt = 2;
+                }
+
+                for(index = 0; index < fileCnt; ++index) {
+                    file = document.getElementById("inputFile").files[index];
+
+                    if (("~FIRMWARE_FILENAME~" === file.name) ||
+                        ("~FILESYSTEM_FILENAME~" === file.name)) {
+
+                        files.push(file);
+                    }
+                }
 
                 $("#progressBar").css("width", "0%").attr("aria-valuenow", 0);
 
-                if ("undefined" === typeof file) {
+                if (0 === files.length) {
 
-                    alert("No file selected.");
-
-                } else if (("~FIRMWARE_FILENAME~" !== file.name) &&
-                        ("~FILESYSTEM_FILENAME~" !== file.name)) {
-
-                    alert("Unknown file: " + file.name);
+                    dialog.showWarning("<p>No file selected.</p>");
 
                 } else {
 
                     disableUI();
 
+                    for(index = 0; index < files.length; ++index) {
+                        fileParameters[files[index].name] = files[index];
+
+                        if ("~FIRMWARE_FILENAME~" === files[index].name) {
+                            fileHeaders["X-File-Size-Firmware"] = files[index].size;
+                        } else if ("~FILESYSTEM_FILENAME~" === files[index].name) {
+                            fileHeaders["X-File-Size-Filesystem"] = files[index].size;
+                        }
+                    }
+
                     utils.makeRequest({
                         method: "POST",
                         url: "/upload.html",
-                        parameter: {
-                            file: file
-                        },
-                        headers: {
-                            "X-File-Size": fileSize
-                        },
+                        parameter: fileParameters,
+                        headers: fileHeaders,
                         onProgress: updateProgress
                     }).then(function(rsp) {
-                        alert("Upload successful.");
+                        dialog.showInfo("<p>Upload successful.</p>")
                     }).catch(function(rsp) {
-                        alert("Error: " + rsp);
+                        dialog.showError("<p>Error: " + rsp + "</p>")
                     }).finally(function() {
                         enableUI();
                     });
                 }
             }
 
+            function getConfigurationFiles() {
+                return restClient.listAllFiles("/configuration").then(function(items) {
+                    fileUrlList = [];
+
+                    for(index = 0; index < items.length; ++index) {
+                        fileUrlList.push({
+                            name: items[index].name,
+                            url: "/rest/api/v1/fs/file?path=" + encodeURIComponent(items[index].name)
+                        });
+                    }
+
+                    return Promise.resolve(fileUrlList);
+                });
+            }
+
+            function urlToPromise(url) {
+                return new Promise(function(resolve, reject) {
+
+                    JSZipUtils.getBinaryContent(url, function (err, data) {
+                        if(err) {
+                            reject(err);
+                        } else {
+                            resolve(data);
+                        }
+                    });
+                });
+            }
+
+            function downloadWithBlob(fileUrlList) {
+                return new Promise(function(resolve, reject) {
+                    fileUrlList.forEach(function(fileUrl, index){
+                        var filenameOnly = fileUrl.name.substring(fileUrl.name.lastIndexOf('/') + 1);
+                        zip.file(filenameOnly, urlToPromise(fileUrl.url), { binary:true });
+                    });
+                    zip.generateAsync({ type:'blob' }).then(function(content) {
+                        var date = new Date();
+                        var day = date.getDate();
+                        day = ((day < 10) ? '0' : '') + day;
+                        var month = date.getMonth() + 1;
+                        month = ((month < 10) ? '0' : '') + month;
+                        var year = date.getFullYear();
+                        var hour = date.getHours();
+                        hour = ((hour < 10) ? '0' : '') + hour;
+                        var minutes = date.getMinutes();
+                        minutes = ((minutes < 10) ? '0' : '') + minutes;
+                        var seconds = date.getSeconds();
+                        seconds = ((seconds < 10) ? '0' : '') + seconds;
+                        var filename = year + month + day + "_" + hour + minutes + seconds + "_backup.zip";
+                        saveAs(content, filename);
+                        resolve();
+                    });
+                });
+            }
+
+            function backup() {
+                dialog.show("Backup", "<p>Please wait, backup is in progress.</p>").then(function() {
+                    return getConfigurationFiles();
+                }).then(function(fileUrlList) {
+                    return downloadWithBlob(fileUrlList);
+                }).then(function() {
+                    dialog.showInfo("<p>Backup successful.</p>");
+                }).catch(function() {
+                    dialog.showError("<p>Backup failed.</p>");
+                });
+            }
+
+            function restore() {
+                var elem = document.getElementById("backupFile");
+
+                if (0 === elem.files.length) {
+
+                    dialog.showWarning("<p>No file selected.</p>");
+
+                } else {
+                    var file        = elem.files[0];
+                    var fileSize    = file.size;
+
+                    if (false === file.name.endsWith(".zip")) {
+
+                        dialog.showError("<p>Unknown file: " + file.name + "</p>");
+
+                    } else {
+
+                        dialog.show("Restore", "<p>Please wait, restore is in progress.</p>").then(function() {
+                            return zip.loadAsync(file);
+                        }).then(function(zipObj) {
+                            var files = Object.keys(zipObj.files);
+                            var promiseChain = Promise.resolve();
+
+                            files.forEach(function(filename) {
+                                var fileType = "text";
+                                var mimeType = "text/plain";
+
+                                if (true === filename.endsWith(".json")) {
+                                    fileType = "text";
+                                    mimeType = "text/plain";
+                                } else if (true === filename.endsWith(".bmp")) {
+
+                                    if (JSZip.support.blob) {
+                                        fileType = "blob";
+                                        mimeType = "application/octet-stream";
+                                    } else if (JSZip.support.uint8array) {
+                                        fileType = "uint8array";
+                                        mimeType = "application/octet-stream";
+                                    }
+                                }
+
+                                zipObj.file(filename).async(fileType).then(function(data) {
+                                    promiseChain = promiseChain.then(restClient.writeFile("/configuration/" + filename, data, mimeType));
+                                });
+                            });
+
+                            return promiseChain;
+                        }).then(function() {
+                            dialog.showInfo("<p>Restore successful.</p>");
+                        }).catch(function() {
+                            dialog.showError("<p>Restore failed.</p>");
+                        });
+                    }
+                }
+            }
+
             /* Execute after page is ready. */
             $(document).ready(function() {
-                menu.create("menu");
-                
+                menu.addSubMenu(menu.data, "Plugins", pluginSubMenu);
+                menu.create("menu", menu.data);
+
                 $("#inputFile").on("change", function() {
+                    var fileName = $(this).val().split("\\").pop();
+                    $(this).next(".custom-file-label").addClass("selected").html(fileName);
+                });
+
+                $("#backupFile").on("change", function() {
                     var fileName = $(this).val().split("\\").pop();
                     $(this).next(".custom-file-label").addClass("selected").html(fileName);
                 });

@@ -1,6 +1,6 @@
 /* MIT License
  *
- * Copyright (c) 2019 - 2021 Andreas Merkle <web@blue-andi.de>
+ * Copyright (c) 2019 - 2023 Andreas Merkle <web@blue-andi.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -33,7 +33,6 @@
  * Includes
  *****************************************************************************/
 #include "WebSocket.h"
-#include "Settings.h"
 
 #include "WsCmdAlias.h"
 #include "WsCmdBrightness.h"
@@ -52,6 +51,7 @@
 
 #include <Logging.h>
 #include <Util.h>
+#include <SettingsService.h>
 
 /******************************************************************************
  * Compiler Switches
@@ -103,8 +103,12 @@ static WsCmdMove            gWsCmdMove;
 /** Websocket slot duration command */
 static WsCmdSlotDuration    gWsCmdSlotDuration;
 
+#if CONFIG_FEATURE_IPERF == 1
+
 /** Websocket iperf command */
 static WsCmdIperf           gWsCmdIperf;
+
+#endif /* CONFIG_FEATURE_IPERF == 1 */
 
 /** Websocket control virtual button command */
 static WsCmdButton          gWsCmdButton;
@@ -128,7 +132,9 @@ static WsCmd*       gWsCommands[] =
     &gWsCmdLog,
     &gWsCmdMove,
     &gWsCmdSlotDuration,
+#if CONFIG_FEATURE_IPERF == 1
     &gWsCmdIperf,
+#endif /* CONFIG_FEATURE_IPERF == 1 */
     &gWsCmdButton,
     &gWsCmdEffect,
     &gWsCmdAlias
@@ -140,20 +146,21 @@ static WsCmd*       gWsCommands[] =
 
 void WebSocketSrv::init(AsyncWebServer& srv)
 {
-    String      webLoginUser;
-    String      webLoginPassword;
+    String              webLoginUser;
+    String              webLoginPassword;
+    SettingsService&    settings        = SettingsService::getInstance();
 
-    if (false == Settings::getInstance().open(true))
+    if (false == settings.open(true))
     {
-        webLoginUser        = Settings::getInstance().getWebLoginUser().getDefault();
-        webLoginPassword    = Settings::getInstance().getWebLoginPassword().getDefault();
+        webLoginUser        = settings.getWebLoginUser().getDefault();
+        webLoginPassword    = settings.getWebLoginPassword().getDefault();
     }
     else
     {
-        webLoginUser        = Settings::getInstance().getWebLoginUser().getValue();
-        webLoginPassword    = Settings::getInstance().getWebLoginPassword().getValue();
+        webLoginUser        = settings.getWebLoginUser().getValue();
+        webLoginPassword    = settings.getWebLoginPassword().getValue();
 
-        Settings::getInstance().close();
+        settings.close();
     }
 
     /* Register websocket event handler */
@@ -164,8 +171,6 @@ void WebSocketSrv::init(AsyncWebServer& srv)
 
     /* Register websocket on webserver */
     srv.addHandler(&m_webSocket);
-
-    return;
 }
 
 /******************************************************************************
@@ -188,7 +193,7 @@ void WebSocketSrv::onEvent(AsyncWebSocket* server, AsyncWebSocketClient* client,
     {
     /* Client connected */
     case WS_EVT_CONNECT:
-        getInstance().onConnect(server, client, reinterpret_cast<AsyncWebServerRequest*>(arg));
+        getInstance().onConnect(server, client, static_cast<AsyncWebServerRequest*>(arg));
         break;
 
     /* Client disconnected */
@@ -203,19 +208,17 @@ void WebSocketSrv::onEvent(AsyncWebSocket* server, AsyncWebSocketClient* client,
 
     /* Remote error */
     case WS_EVT_ERROR:
-        getInstance().onError(server, client, *reinterpret_cast<uint16_t*>(arg), reinterpret_cast<const char*>(data), len);
+        getInstance().onError(server, client, *static_cast<uint16_t*>(arg), reinterpret_cast<const char*>(data), len);
         break;
 
     /* Data */
     case WS_EVT_DATA:
-        getInstance().onData(server, client, reinterpret_cast<AwsFrameInfo*>(arg), data, len);
+        getInstance().onData(server, client, static_cast<AwsFrameInfo*>(arg), data, len);
         break;
 
     default:
         break;
     }
-
-    return;
 }
 
 void WebSocketSrv::onConnect(AsyncWebSocket* server, AsyncWebSocketClient* client, AsyncWebServerRequest* request)
@@ -223,13 +226,11 @@ void WebSocketSrv::onConnect(AsyncWebSocket* server, AsyncWebSocketClient* clien
     UTIL_NOT_USED(request);
 
     LOG_INFO("ws[%s][%u] Client connected.", server->url(), client->id());
-    return;
 }
 
 void WebSocketSrv::onDisconnect(AsyncWebSocket* server, AsyncWebSocketClient* client)
 {
     LOG_INFO("ws[%s][%u] Client disconnected.", server->url(), client->id());
-    return;
 }
 
 void WebSocketSrv::onPong(AsyncWebSocket* server, AsyncWebSocketClient* client, uint8_t* data, size_t len)
@@ -243,8 +244,6 @@ void WebSocketSrv::onPong(AsyncWebSocket* server, AsyncWebSocketClient* client, 
     {
         LOG_INFO("ws[%s][%u] Pong: %s", server->url(), client->id(), data);
     }
-
-    return;
 }
 
 void WebSocketSrv::onError(AsyncWebSocket* server, AsyncWebSocketClient* client, uint16_t reasonCode, const char* reasonStr, size_t reasonStrLen)
@@ -258,8 +257,6 @@ void WebSocketSrv::onError(AsyncWebSocket* server, AsyncWebSocketClient* client,
     {
         LOG_INFO("ws[%s][%u] Error %u: %s", server->url(), client->id(), reasonCode, reasonStr);
     }
-
-    return;
 }
 
 void WebSocketSrv::onData(AsyncWebSocket* server, AsyncWebSocketClient* client, AwsFrameInfo* info, const uint8_t* data, size_t len)
@@ -278,8 +275,8 @@ void WebSocketSrv::onData(AsyncWebSocket* server, AsyncWebSocketClient* client, 
     }
     /* Is the whole message in a single frame and we got all of it's data? */
     else if ((0U < info->final) &&
-                (0U == info->index) &&
-                (len == info->len ))
+             (0U == info->index) &&
+             (len == info->len ))
     {
         /* Empty text message? */
         if ((nullptr == data) ||
@@ -290,7 +287,10 @@ void WebSocketSrv::onData(AsyncWebSocket* server, AsyncWebSocketClient* client, 
         /* Handle text message */
         else
         {
-            handleMsg(server, client, reinterpret_cast<const char*>(data), len);
+            const void* vData   = data;
+            const char* cData   = static_cast<const char*>(vData);
+
+            handleMsg(server, client, cData, len);
         }
     }
     /* Message is comprised of multiple frames or the frame is split into multiple packets */
@@ -299,15 +299,13 @@ void WebSocketSrv::onData(AsyncWebSocket* server, AsyncWebSocketClient* client, 
         LOG_ERROR("ws[%s][%u] Fragmented messages not supported.", server->url(), client->id());
         server->close(client->id(), 0U, "Not supported message type.");
     }
-
-    return;
 }
 
 void WebSocketSrv::handleMsg(AsyncWebSocket* server, AsyncWebSocketClient* client, const char* msg, size_t msgLen)
 {
     size_t      msgIndex    = 0U;
-    String      cmd;
-    String      par;
+    const char* cmd         = nullptr;
+    size_t      cmdLength   = 0U;
     WsCmd*      wsCmd       = nullptr;
     const char  DELIMITER   = ';';
 
@@ -326,21 +324,23 @@ void WebSocketSrv::handleMsg(AsyncWebSocket* server, AsyncWebSocketClient* clien
     }
 
     /* Get command string */
+    cmd = &msg[msgIndex];
     while((msgLen > msgIndex) && (DELIMITER != msg[msgIndex]))
     {
-        cmd += msg[msgIndex];
+        ++cmdLength;
         ++msgIndex;
     }
 
     /* Command string not empty? */
-    if (0 < cmd.length())
+    if (0 < cmdLength)
     {
         uint8_t index = 0U;
 
         /* Find command object */
         while((nullptr == wsCmd) && (index < UTIL_ARRAY_NUM(gWsCommands)))
         {
-            if (cmd == gWsCommands[index]->getCmd())
+            /* Note, cmd is NOT terminated! */
+            if (0 == strncmp(gWsCommands[index]->getCmd(), cmd, cmdLength))
             {
                 wsCmd = gWsCommands[index];
             }
@@ -359,33 +359,42 @@ void WebSocketSrv::handleMsg(AsyncWebSocket* server, AsyncWebSocketClient* clien
             if ((msgLen > msgIndex) &&
                 (DELIMITER == msg[msgIndex]))
             {
+                const char* par;
+                size_t      parLength;
+                String      parStr;
+
                 /* Overstep delimiter */
                 ++msgIndex;
 
+                par = &msg[msgIndex];
+                parLength = 0U;
                 while(msgLen > msgIndex)
                 {
                     if (DELIMITER == msg[msgIndex])
                     {
-                        wsCmd->setPar(par.c_str());
-                        par.clear();
+                        parStr = String(par, parLength);
+
+                        wsCmd->setPar(parStr.c_str());
+
+                        par = &msg[msgIndex + 1U];
+                        parLength = 0U;
                     }
                     else
                     {
-                        par += msg[msgIndex];
+                        ++parLength;
                     }
 
                     ++msgIndex;
                 }
 
-                wsCmd->setPar(par.c_str());
+                parStr = String(par, parLength);
+                wsCmd->setPar(parStr.c_str());
             }
 
-            /* Execute command */
+            /* Execute command (attention, its called in callback context). */
             wsCmd->execute(server, client);
         }
     }
-
-    return;
 }
 
 /******************************************************************************

@@ -1,6 +1,6 @@
 /* MIT License
  *
- * Copyright (c) 2019 - 2021 Andreas Merkle <web@blue-andi.de>
+ * Copyright (c) 2019 - 2023 Andreas Merkle <web@blue-andi.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -83,37 +83,56 @@ bool SysMsg::init()
     return status;
 }
 
-void SysMsg::show(const String& msg, uint32_t duration, uint32_t max, bool blocking)
+void SysMsg::show(const String& msg, uint32_t duration, uint32_t max)
 {
     if (nullptr != m_plugin)
     {
+        uint8_t slotId = DisplayMgr::getInstance().getSlotIdByPluginUID(m_plugin->getUID());
+
+        /* Important: Call first show() to enable plugin. Otherwise the slot activation request will fail. */
         m_plugin->show(msg, duration, max);
 
-        /* Schedule plugin immediately */
-        DisplayMgr::getInstance().activatePlugin(m_plugin);
-
-        if (true == blocking)
+        if (false == DisplayMgr::getInstance().activateSlot(slotId))
         {
-            while(true == m_plugin->isEnabled())
-            {
-                delay(1U);
-            }
+            LOG_WARNING("System message suppressed.");
         }
     }
-
-    return;
 }
 
-bool SysMsg::isReady() const
+void SysMsg::enableSignal()
 {
-    bool isReady = false;
+    if (nullptr != m_plugin)
+    {
+        m_plugin->enableSignal();
+    }
+}
+
+void SysMsg::disableSignal()
+{
+    if (nullptr != m_plugin)
+    {
+        m_plugin->disableSignal();
+    }
+}
+
+bool SysMsg::isActive() const
+{
+    bool isActive = false;
 
     if (nullptr != m_plugin)
     {
-        isReady = (false == m_plugin->isEnabled()) ? true : false;
+        isActive = m_plugin->isEnabled();
     }
 
-    return isReady;
+    return isActive;
+}
+
+void SysMsg::next()
+{
+    if (nullptr != m_plugin)
+    {
+        m_plugin->next();
+    }
 }
 
 /******************************************************************************

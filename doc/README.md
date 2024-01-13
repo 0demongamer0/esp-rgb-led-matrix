@@ -1,54 +1,45 @@
-# PIXELIX
+# PIXELIX <!-- omit in toc -->
 ![PIXELIX](./images/LogoBlack.png)
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](http://choosealicense.com/licenses/mit/)
 
-- [PIXELIX](#pixelix)
-- [Documentation](#documentation)
-  - [Requirements](#requirements)
-  - [Hardware](#hardware)
-  - [Software](#software)
-  - [Structure](#structure)
+# Documentation  <!-- omit in toc -->
 
-# Documentation
+* [Hardware](#hardware)
+* [Software](#software)
+* [Issues, Ideas And Bugs](#issues-ideas-and-bugs)
+* [License](#license)
+* [Contribution](#contribution)
 
-## Requirements
+# Hardware
 
-* [Requirements](REQUIREMENTS.md)
-
-## Hardware
-
-* [Boards](BOARDS.md)
+* [Boards](./boards/README.md)
 * [Sensors](SENSORS.md)
 
-## Software
+# Software
 
-* [Toolchain installation](TOOLCHAIN-INSTALLATION.md)
-* [Software build](SW-BUILD.md)
-* [Software update](SW-UPDATE.md)
-* [Software configuration management](SW-RELEASE.md)
+* [Software architecture](./architecture/README.md)
+* [Software configuration management](./config/README.md)
+    * [Toolchain installation](./config/TOOLCHAIN-INSTALLATION.md)
+    * [Software build](./config/SW-BUILD.md)
+    * [Software update](./config/SW-UPDATE.md)
 * [Plugins](PLUGINS.md)
 * [Plugin Development](PLUGIN-DEV.md)
-* [REST API description](https://app.swaggerhub.com/apis/BlueAndi/Pixelix/1.2.0)
+* [REST API description](https://app.swaggerhub.com/apis/BlueAndi/Pixelix/1.4.0)
+* [MQTT](MQTT.md)
+* [Home Assistant REST Wrapper](HOMEASSISTANT.md)
 * [Websocket API description](WEBSOCKET.md)
+* [Sprite sheet](SPRITESHEET.md)
+* [Alternative icons](ICONS.md)
+* [Configuration examples for GrabViaMqttPlugin and GrabViaRestPlugin.](./grabConfigs/README.md)
 
-## Structure
+# Issues, Ideas And Bugs
+If you have further ideas or you found some bugs, great! Create a [issue](https://github.com/BlueAndi/esp-rgb-led-matrix/issues) or if you are able and willing to fix it by yourself, clone the repository and create a pull request.
 
-<pre>
-+---data            (All filesystem files (SPIFFS))
-+---doc             (Documentation)
-    +---datasheets  (Datasheets of electronic parts)
-    +---design      (Design related documents)
-    +---doxygen     (Sourcecode documentation)
-    +---eagle-libs  (Eagle libraries)
-    +---images      (Images used for documentation)
-    +---pcb         (Electronic PCB images)
-    +---rfc         (Requests for Comments specifications)
-    \---schematics  (Schematics)
-+---include         (Include files)
-+---lib             (Project specific (private) libraries)
-+---scripts         (PlatformIO specific Python scripts)
-+---src             (Sourcecode)
-+---test            (Unit tests)
-\---platform.ini    (Project configuration file)
-</pre>
+# License
+The whole source code is published under the [MIT license](http://choosealicense.com/licenses/mit/).
+Consider the different licenses of the used third party libraries too!
+
+# Contribution
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, shall be licensed as above, without any
+additional terms or conditions.

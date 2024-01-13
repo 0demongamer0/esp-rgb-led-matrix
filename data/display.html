@@ -8,64 +8,6 @@
         <link rel="stylesheet" type="text/css" href="/style/bootstrap.min.css" />
         <link rel="stylesheet" type="text/css" href="/style/sticky-footer-navbar.css" />
         <link rel="stylesheet" type="text/css" href="/style/style.css" />
-        <style>
-            .bd-placeholder-img {
-                font-size: 1.125rem;
-                text-anchor: middle;
-                -webkit-user-select: none;
-                -moz-user-select: none;
-                -ms-user-select: none;
-                user-select: none;
-            }
-
-            @media (min-width: 768px) {
-                .bd-placeholder-img-lg {
-                    font-size: 3.5rem;
-                }
-            }
-
-            div.divSlot {
-                height: 12em;
-                width: 12em;
-                border: 2px solid #666666;
-                background-color: #ccc;
-                margin-right: 5px;
-                border-radius: 10px;
-                box-shadow: inset 0 0 3px #000;
-                text-align: center;
-                float: left;
-            }
-            div.locked {
-                background-image: repeating-linear-gradient(45deg, #ccc 0%, #ccc 2%, red 2%, red 4%, #ccc 4%);
-            }
-            p.dragableSlot {
-                border: 2px solid red;
-                padding: 4px 4px 4px 4px;
-                background-color: #666666;
-                margin: 1em 1em 1em 1em;
-                width: auto;
-            }
-            /* Prevent the text contents of draggable elements from being selectable. */
-            [draggable] {
-                -moz-user-select: none;
-                -khtml-user-select: none;
-                -webkit-user-select: none;
-                user-select: none;
-                cursor: move;
-                /* Required to make elements draggable in old WebKit */
-                -khtml-user-drag: element;
-                -webkit-user-drag: element;
-            }
-            .divSlot header {
-                color: #fff;
-                background: red;
-                text-shadow: #000 0 1px;
-                padding: 5px;
-                border-bottom: 1px solid #ddd;
-                border-top-left-radius: 10px;
-                border-top-right-radius: 10px;
-            }
-        </style>
 
         <title>PIXELIX</title>
         <link rel="shortcut icon" type="image/png" href="/favicon.png" />
@@ -89,6 +31,21 @@
 
         <!-- Begin page content -->
         <main role="main" class="flex-shrink-0">
+            <!-- Dialog -->
+            <div class="modal fade" id="modalDialog" tabindex="-1" aria-labelledby="modalTitle" aria-hidden="true" data-keyboard="false" data-backdrop="static">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header" id="dialogHeader">
+                            <h5 class="modal-title" id="dialogTitle"></h5>
+                        </div>
+                        <div class="modal-body text-dark" id="dialogBody">
+                        </div>
+                        <div class="modal-footer text-dark" id="dialogFooter">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Main view -->
             <div class="container">
                 <h1 class="mt-5">Display</h1>
                 <p>Slot: <span id="slotId">-</span></p>
@@ -97,8 +54,15 @@
                 <div id="divSlots">
                 </div>
                 <p style="clear: both;"><br /></p>
+                <ul>
+                    <li>Red shaded: Slot is locked and plugin can not be removed.</li>
+                    <li>Yellow shaded: Slot is sticky. Slot scheduling is stopped.</li>
+                    <li>Red/Yellow shaded: Slot is sticky and locked.</li>
+                </ul>
                 <p>
+                    <button class="btn btn-light" type="button" onclick="prevSlot()" disabled>Previous slot</button>
                     <button class="btn btn-light" type="button" onclick="nextSlot()" disabled>Next slot</button>
+                    <button id="updateDisplayButton" class="btn btn-light" type="button" onclick="updateDisplay()" disabled>Enable auto. display update</button>
                 </p>
                 <p>Currently active fade effect: <span id="lableFadeEffect"> Linear</span></p>
                 <p><button class="btn btn-light" type="button" onclick="nextEffect()" disabled>Next fade effect</button></p>
@@ -111,42 +75,44 @@
                 <p>
                     <ul class="list-group">
                         <li class="list-group-item text-dark">Automatic brightness control: <span id="autoBrightnessCtrl">?</span> <button id="bAutoBrightnessCtrl" type="button" onclick="changeAutoBrightnessCtrl()" disabled>?</button></li>
-                        <li class="list-group-item text-dark">Brightness: <span id="brightness">?</span> <input type="range" id="sliderBrightness" min="0" max="255" onchange="changeBrightness()" disabled /></li>
+                        <li class="list-group-item text-dark">Brightness: <span id="brightness">?</span> <input type="range" id="sliderBrightness" min="25" max="255" onchange="changeBrightness()" disabled /></li>
                     </ul>
                 </p>
             </div>
         </main>
-  
+
         <!-- Footer -->
         <footer class="footer mt-auto py-3">
             <div class="container">
                 <hr />
-                <span class="text-muted">(C) 2019 - 2021 by Andreas Merkle (web@blue-andi.de)</span><br />
+                <span class="text-muted">(C) 2019 - 2023 Andreas Merkle (web@blue-andi.de)</span><br />
                 <span class="text-muted"><a href="https://github.com/BlueAndi/esp-rgb-led-matrix/blob/master/LICENSE">MIT License</a></span>
             </div>
         </footer>
 
         <!-- jQuery, and Bootstrap JS bundle -->
-        <script type="text/javascript" src="/js/jquery-3.5.1.slim.min.js"></script>
+        <script type="text/javascript" src="/js/jquery-3.6.3.slim.min.js"></script>
         <script type="text/javascript" src="/js/bootstrap.bundle.min.js"></script>
         <!-- Pixelix websocket library -->
         <script type="text/javascript" src="/js/ws.js"></script>
         <script type="text/javascript" src="https://cdn.polyfill.io/v2/polyfill.min.js"></script>
         <!-- Pixelix menu -->
         <script type="text/javascript" src="/js/menu.js"></script>
+        <script type="text/javascript" src="/js/pluginsSubMenu.js"></script>
+        <!-- Pixelix utilities -->
+        <script type="text/javascript" src="/js/dialog.js"></script>
         <!-- Pixelix drag'n drop -->
         <script type="text/javascript" src="/js/dragDropTouch.js"></script>
 
         <!-- Custom javascript -->
         <script>
-            var matrixWidth         = 32;       // LED matrix width in number of LEDs
-            var matrixHeight        = 8;        // LED matrix height in number of LEDs
             var ctx                 = null;     // Canvas context
             var pixelWidth          = 10;       // Width of a single LED in pixels
             var pixelHeight         = 10;       // Height of a single LED in pixels
             var timerId             = 0;        // Timer id
             var period              = 400;      // Display refresh period in ms
             var wsClient            = new pixelix.ws.Client();
+            var isPageUnload        = false;
             var plugins             = [];       // List of all available plugins
             var autoBrightnessCtrl  = false;    // Is automatic brightness control enabled or disabled?
             var brightness          = 0;        // Brightness [0; 255]
@@ -167,8 +133,12 @@
             /* If websocket connection is unexpectedly closed, clean up. */
             function wsOnClosed() {
                 disableUI();
+
                 window.clearTimeout(timerId);
-                return;
+
+                if (false === isPageUnload) {
+                    dialog.showError("<p>Websocket connection closed.</p>");
+                }
             }
 
             function plot(x, y, color) {
@@ -189,11 +159,22 @@
 
                     $("#slotId").text(rsp.slotId);
 
+                    /* If necessary, resize the canvas. */
+                    var $canvas = $("#canvas");
+                    var ctx = $canvas[0].getContext('2d');
+                    var width = rsp.width * pixelWidth + rsp.width + 1;
+                    var height = rsp.height * pixelWidth + rsp.height + 1;
+
+                    if ((ctx.canvas.width != width) || (ctx.canvas.height != height)) {
+                        ctx.canvas.width = width;
+                        ctx.canvas.height = height;
+                    }
+
                     /* Handle display data */
-                    for(y = 0; y < matrixHeight; ++y) {
-                        for(x = 0; x < matrixWidth; ++x) {
+                    for(y = 0; y < rsp.height; ++y) {
+                        for(x = 0; x < rsp.width; ++x) {
                             if (rsp.data.length > index) {
-                                color   = parseInt(rsp.data[index]);
+                                color   = rsp.data[index];
                                 red     = (color & 0xff0000) >> 16;
                                 green   = (color & 0x00ff00) >> 8;
                                 blue    = (color & 0x0000ff) >> 0;
@@ -228,7 +209,7 @@
                     if ("undefined" !== typeof err) {
                         console.error(err);
                     }
-                    alert("Install " + pluginName + " failed.");
+                    return dialog.showError("<p>Install " + pluginName + " failed.</p>");
                 }).finally(function() {
                     enableUI();
                 });
@@ -245,7 +226,7 @@
                     if ("undefined" !== typeof err) {
                         console.error(err);
                     }
-                    alert("Uninstall slot " + slotId + " failed.");
+                    return dialog.showError("<p>Uninstall slot " + slotId + " failed.</p>");
                 }).finally(function() {
                     enableUI();
                 });
@@ -261,11 +242,11 @@
                     if ("undefined" !== typeof err) {
                         console.error(err);
                     }
-                    alert("Failed.");
+                    return dialog.showError("<p>Failed.</p>");
                 }).finally(function() {
                 });
             }
-            
+
             function updateFadeEffect() {
                 /* Update label accordingly. */
                 if (1 === currentFadeEffect) {
@@ -282,19 +263,52 @@
                 }
             }
 
-            function nextSlot() {
+            function prevSlot() {
+                var buttonActionIdPrevSlot = 2; /* See ButtonActionId */
                 disableUI();
 
-                return wsClient.triggerButton().then(function(rsp) {
+                return wsClient.triggerButton({"actionId": buttonActionIdPrevSlot}).then(function(rsp) {
                     /* Nothing to do */
                 }).catch(function(err) {
                     if ("undefined" !== typeof err) {
                         console.error(err);
                     }
-                    alert("Failed.");
+                    return dialog.showError("<p>Failed.</p>");
                 }).finally(function() {
                     enableUI();
                 });
+            }
+
+            function nextSlot() {
+                var buttonActionIdNextSlot = 1; /* See ButtonActionId */
+                disableUI();
+
+                return wsClient.triggerButton({"actionId": buttonActionIdNextSlot}).then(function(rsp) {
+                    /* Nothing to do */
+                }).catch(function(err) {
+                    if ("undefined" !== typeof err) {
+                        console.error(err);
+                    }
+                    return dialog.showError("<p>Failed.</p>");
+                }).finally(function() {
+                    enableUI();
+                });
+            }
+
+            function updateDisplay() {
+                disableUI();
+
+                /* Currently off? */
+                if (0 === timerId) {
+                    timerId = window.setTimeout(getDisplayContent, period);
+                    $("#updateDisplayButton").text("Disable auto. display update");
+                } else {
+                    window.clearTimeout(timerId);
+                    timerId = 0;
+                    $("#updateDisplayButton").text("Enable auto. display update");
+                }
+
+                enableUI();
             }
 
             function move(uid, slotId) {
@@ -306,7 +320,7 @@
                     if ("undefined" !== typeof err) {
                         console.error(err);
                     }
-                    alert("Moving failed.");
+                    return dialog.showError("<p>Moving failed.</p>");
                 }).finally(function() {
                     return updateSlotInfo();
                 });
@@ -355,7 +369,7 @@
                     if ("undefined" !== typeof err) {
                         console.error(err);
                     }
-                    alert("Set duration failed.");
+                    return dialog.showError("<p>Set duration failed.</p>");
                 }).finally(function() {
                     return updateSlotInfo();
                 });
@@ -372,7 +386,7 @@
                     if ("undefined" !== typeof err) {
                         console.error(err);
                     }
-                    alert("Set alias failed.");
+                    return dialog.showError("<p>Set alias failed.</p>");
                 }).finally(function() {
                     return updateSlotInfo();
                 });
@@ -396,16 +410,27 @@
                     for(index = 0; index < rsp.slots.length; ++index) {
                         $divSlot = $("<div>");
 
-                        if (false == rsp.slots[index].isLocked) {
-                            $divSlot.attr("class", "divSlot");
+                        if (false === rsp.slots[index].isLocked) {
+
+                            if (false === rsp.slots[index].isSticky) {
+                                $divSlot.attr("class", "divSlot");
+                            } else {
+                                $divSlot.attr("class", "divSlot sticky");
+                            }
+
                             $divSlot.attr("ondragover", "allowDrop(event)");
                             $divSlot.attr("ondrop", "drop(event)");
                         } else {
-                            $divSlot.attr("class", "divSlot locked");
+
+                            if (false === rsp.slots[index].isSticky) {
+                                $divSlot.attr("class", "divSlot locked");
+                            } else {
+                                $divSlot.attr("class", "divSlot lockedAndsticky");
+                            }
                         }
 
                         $divSlot.attr("id", index);
-                        
+
                         $header = $("<header>");
                         $header.append("Slot " + index + "<br />");
 
@@ -416,7 +441,7 @@
                             .attr("min", "1")
                             .attr("max", "3600")
                             .attr("onchange", "setDuration(" + index + ")");
-                        
+
                         $header.append($inputDuration);
                         $header.append("[s]");
 
@@ -467,12 +492,12 @@
                         .attr("ondragover", "allowDrop(event)")
                         .attr("ondrop", "drop(event)")
                         .attr("id", "uninstall");
-                    
+
                     $header = $("<header>")
                         .text("Uninstall");
-                    
+
                     $divSlot.append($header);
-                    
+
                     $divSlots.append($divSlot);
                 });
             }
@@ -496,8 +521,8 @@
                     if ("undefined" !== typeof err) {
                         console.error(err);
                     }
-                    alert("Changing brightness failed.");
                     updateBrightness();
+                    return dialog.showError("<p>Changing brightness failed.</p>");
                 }).finally(function() {
                     enableUI();
                 });
@@ -526,7 +551,7 @@
                     if ("undefined" !== typeof err) {
                         console.error(err);
                     }
-                    alert("Changing automatic brightness control failed.");
+                    return dialog.showError("<p>Changing automatic brightness control failed.</p>");
                 });
             }
 
@@ -535,7 +560,8 @@
                 var displayCanvas = document.getElementById("canvas");
                 ctx = displayCanvas.getContext("2d");
 
-                menu.create("menu");
+                menu.addSubMenu(menu.data, "Plugins", pluginSubMenu);
+                menu.create("menu", menu.data);
 
                 /* Connect to pixelix */
                 wsClient.connect({
@@ -575,9 +601,6 @@
                     currentFadeEffect = rsp.fadeEffect;
                     updateFadeEffect();
                 }).then(function(rsp) {
-                    /* Request display content periodically. */
-                    timerId = window.setTimeout(getDisplayContent, period);
-
                     /* UI is enabled at least. */
                     enableUI();
                 }).catch(function(err) {

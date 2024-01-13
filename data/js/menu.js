@@ -9,73 +9,7 @@ menu.data = [{
 }, {
     "title": "Plugins",
     "hyperRef": "#",
-    "subMenu": [{
-        "title": "BTC Quote Plugin",
-        "hyperRef": "/plugins/BTCQuotePlugin.html"
-    }, {
-        "title": "Countdown Plugin",
-        "hyperRef": "/plugins/CountdownPlugin.html"
-    }, {
-        "title": "Date Plugin",
-        "hyperRef": "/plugins/DatePlugin.html"
-    }, {
-        "title": "DateTime Plugin",
-        "hyperRef": "/plugins/DateTimePlugin.html"
-    }, {
-        "title": "Fire Plugin",
-        "hyperRef": "/plugins/FirePlugin.html"
-    }, {
-        "title": "GameOfLife Plugin",
-        "hyperRef": "/plugins/GameOfLifePlugin.html"
-    }, {
-        "title": "Github Plugin",
-        "hyperRef": "/plugins/GithubPlugin.html"
-    }, {
-        "title": "Gruenbeck Plugin",
-        "hyperRef": "/plugins/GruenbeckPlugin.html"
-    }, {
-        "title": "IconTextLamp Plugin",
-        "hyperRef": "/plugins/IconTextLampPlugi.html"
-    }, {
-        "title": "IconText Plugin",
-        "hyperRef": "/plugins/IconTextPlugin.html"
-    }, {
-        "title": "JustText Plugin",
-        "hyperRef": "/plugins/JustTextPlugin.html"
-    }, {
-        "title": "OpenWeather Plugin",
-        "hyperRef": "/plugins/OpenWeatherPlugin.html"
-    }, {
-        "title": "Rainbow Plugin",
-        "hyperRef": "/plugins/RainbowPlugin.html"
-    }, {
-        "title": "Sensor Plugin",
-        "hyperRef": "/plugins/SensorPlugin.html"
-    }, {
-        "title": "ShellyPlugS Plugin",
-        "hyperRef": "/plugins/ShellyPlugSPlugin.html"
-    }, {
-        "title": "Sunrise Plugin",
-        "hyperRef": "/plugins/SunrisePlugin.html"
-    }, {
-        "title": "SysMsg Plugin",
-        "hyperRef": "/plugins/SysMsgPlugin.html"
-    }, {
-        "title": "TempHumid Plugin",
-        "hyperRef": "/plugins/TempHumidPlugin.html"
-    }, {
-        "title": "Test Plugin",
-        "hyperRef": "/plugins/TestPlugin.html"
-    }, {
-        "title": "Time Plugin",
-        "hyperRef": "/plugins/TimePlugin.html"
-    }, {
-        "title": "Volumio Plugin",
-        "hyperRef": "/plugins/VolumioPlugin.html"
-    }, {
-        "title": "WifiStatus Plugin",
-        "hyperRef": "/plugins/WifiStatusPlugin.html"
-    }]
+    "subMenu": []
 }, {
     "title": "Settings",
     "hyperRef": "/settings.html"
@@ -100,16 +34,34 @@ menu.data = [{
     "hyperRef": "/about.html"
 }];
 
-menu.create = function(ulId) {
-    var index       = 0;
-    var listItem    = null;
-    var anchor      = null;
+menu.captivePortal = [{
+    "title": "Home",
+    "hyperRef": "/index.html"
+}, {
+    "title": "About",
+    "hyperRef": "/about.html"
+}];
 
-    for(index = 0; index < menu.data.length; ++index) {
-        if ("undefined" === typeof menu.data[index].subMenu) {
-            menu._createMenuItem(ulId, menu.data[index]);
+menu.addSubMenu = function(menuData, title, subMenu) {
+    var index = 0;
+
+    for(index = 0; index < menuData.length; ++index)
+    {
+        if (menuData[index].title === title) {
+            menuData[index].subMenu = menuData[index].subMenu.concat(subMenu);
+            break;
+        }
+    }
+}
+
+menu.create = function(ulId, menuData) {
+    var index = 0;
+
+    for(index = 0; index < menuData.length; ++index) {
+        if ("undefined" === typeof menuData[index].subMenu) {
+            menu._createMenuItem(ulId, menuData[index]);
         } else {
-            menu._createSubMenu(ulId, menu.data[index]);
+            menu._createSubMenu(ulId, menuData[index]);
         }
     }
 };
@@ -120,7 +72,7 @@ menu._createMenuItem = function(ulId, menuItem) {
                     .attr("class", "nav-link")
                     .attr("href", menuItem.hyperRef)
                     .text(menuItem.title);
-    
+
     if (location.pathname === menuItem.hyperRef) {
         $(anchor).addClass("active");
     }
@@ -141,7 +93,7 @@ menu._createSubMenu = function(ulId, menuItem) {
                     .attr("aria-expanded", "false")
                     .text(menuItem.title);
     var div         = $("<div>")
-                    .attr("class", "dropdown-menu")
+                    .attr("class", "dropdown-menu scrollable-menu")
                     .attr("aria-labelledby", menuItem.title + "-dropdown");
     var index       = 0;
 
@@ -162,7 +114,7 @@ menu._createSubMenuItem = function($div, subMenuItem) {
                     .attr("href", subMenuItem.hyperRef)
                     .text(subMenuItem.title);
     var isActive    = false;
-    
+
     $($div).append(anchor);
 
     if (location.pathname === subMenuItem.hyperRef) {

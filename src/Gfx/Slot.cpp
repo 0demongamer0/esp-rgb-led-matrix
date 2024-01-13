@@ -1,6 +1,6 @@
 /* MIT License
  *
- * Copyright (c) 2019 - 2021 Andreas Merkle <web@blue-andi.de>
+ * Copyright (c) 2019 - 2023 Andreas Merkle <web@blue-andi.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -58,14 +58,6 @@
  * Public Methods
  *****************************************************************************/
 
-/******************************************************************************
- * Protected Methods
- *****************************************************************************/
-
-/******************************************************************************
- * Private Methods
- *****************************************************************************/
-
 Slot::Slot() :
     m_plugin(nullptr),
     m_duration(DURATION_DEFAULT),
@@ -75,6 +67,25 @@ Slot::Slot() :
 
 Slot::~Slot()
 {
+}
+
+Slot::Slot(const Slot& slot) :
+    m_plugin(slot.m_plugin),
+    m_duration(slot.m_duration),
+    m_isLocked(slot.m_isLocked)
+{
+}
+
+Slot& Slot::operator=(const Slot& slot)
+{
+    if (this != (&slot))
+    {
+        m_plugin    = slot.m_plugin;
+        m_duration  = slot.m_duration;
+        m_isLocked  = slot.m_isLocked;
+    }
+
+    return *this;
 }
 
 IPluginMaintenance* Slot::getPlugin()
@@ -135,6 +146,14 @@ bool Slot::isLocked() const
 {
     return m_isLocked;
 }
+
+/******************************************************************************
+ * Protected Methods
+ *****************************************************************************/
+
+/******************************************************************************
+ * Private Methods
+ *****************************************************************************/
 
 /******************************************************************************
  * External Functions

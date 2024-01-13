@@ -8,19 +8,27 @@ pixelix.ws.getLogLevelStr = function(logLevel) {
     switch(logLevel)
     {
     case 0:
-        str = "INFO";
+        str = "FATAL";
         break;
 
     case 1:
-        str = "WARNING";
-        break;
-
-    case 2:
         str = "ERROR";
         break;
 
+    case 2:
+        str = "WARNING";
+        break;
+
     case 3:
-        str = "FATAL";
+        str = "INFO";
+        break;
+
+    case 4:
+        str = "DEBUG";
+        break;
+
+    case 5:
+        str = "TRACE";
         break;
 
     default:
@@ -68,7 +76,7 @@ pixelix.ws.Client = function(options) {
         if (null !== this._onEvent) {
             this._onEvent(evt);
         }
-    }
+    };
 };
 
 pixelix.ws.Client.prototype.connect = function(options) {
@@ -136,17 +144,23 @@ pixelix.ws.Client.prototype.disconnect = function(options) {
 };
 
 pixelix.ws.Client.prototype._onMessage = function(msg) {
-    var data    = msg.split(";");
-    var status  = data.shift();
-    var rsp     = {};
-    var index   = 0;
+    var data        = msg.split(";");
+    var status      = data.shift();
+    var rsp         = {};
+    var index       = 0;
+    var elements    = 0;
 
     if ("EVT" === status) {
-        rsp.timestamp = parseInt(data[0]);
-        rsp.level = parseInt(data[1]);
-        rsp.filename = data[2].substring(1, data[2].length - 1);
-        rsp.line = parseInt(data[3]);
-        rsp.text = data[4].substring(1, data[4].length - 1);
+        rsp.evtType = data.shift();
+
+        if ("LOG" === rsp.evtType) {
+            rsp.timestamp = parseInt(data[0]);
+            rsp.level = parseInt(data[1]);
+            rsp.filename = data[2].substring(1, data[2].length - 1);
+            rsp.line = parseInt(data[3]);
+            rsp.text = data[4].substring(1, data[4].length - 1);
+        }
+
         this._sendEvt(rsp);
     } else {
         if (null === this._pendingCmd) {
@@ -156,7 +170,9 @@ pixelix.ws.Client.prototype._onMessage = function(msg) {
                 rsp.name = data[0];
                 this._pendingCmd.resolve(rsp);
             } else if ("GETDISP" === this._pendingCmd.name) {
-                rsp.slotId = data.shift();
+                rsp.slotId = parseInt(data.shift());
+                rsp.width = parseInt(data.shift());
+                rsp.height = parseInt(data.shift());
                 rsp.data = [];
                 for(index = 0; index < data.length; ++index) {
                     rsp.data.push(parseInt(data[index], 16));
@@ -197,13 +213,15 @@ pixelix.ws.Client.prototype._onMessage = function(msg) {
             } else if ("SLOTS" === this._pendingCmd.name) {
                 rsp.maxSlots = parseInt(data.shift());
                 rsp.slots = [];
-                for(index = 0; index < (data.length / 5); ++index) {
+                elements = 6;
+                for(index = 0; index < (data.length / elements); ++index) {
                     rsp.slots.push({
-                        name: data[5 * index + 0].substring(1, data[5 * index + 0].length - 1),
-                        uid: parseInt(data[5 * index + 1]),
-                        alias: data[5 * index + 2].substring(1, data[5 * index + 2].length - 1),
-                        isLocked: (0 == parseInt(data[5 * index + 3])) ? false : true,
-                        duration: parseInt(data[5 * index + 4])
+                        name: data[elements * index + 0].substring(1, data[elements * index + 0].length - 1),
+                        uid: parseInt(data[elements * index + 1]),
+                        alias: data[elements * index + 2].substring(1, data[elements * index + 2].length - 1),
+                        isLocked: (0 == parseInt(data[elements * index + 3])) ? false : true,
+                        isSticky: (0 == parseInt(data[elements * index + 4])) ? false : true,
+                        duration: parseInt(data[elements * index + 5])
                     });
                 }
                 this._pendingCmd.resolve(rsp);
@@ -215,13 +233,17 @@ pixelix.ws.Client.prototype._onMessage = function(msg) {
             }
         } else {
             console.error("Command " + this._pendingCmd.name + " failed.");
-            this._pendingCmd.reject();
+
+            if (0 < data.length) {
+                this._pendingCmd.reject(this._pendingCmd.name + ": " + data[0]);
+            } else {
+                this._pendingCmd.reject(this._pendingCmd.name + ": Unknown error.");
+            }
         }
 
         this._pendingCmd = null;
+        this._sendCmdFromQueue();
     }
-
-    this._sendCmdFromQueue();
 
     return;
 };
@@ -535,14 +557,21 @@ pixelix.ws.Client.prototype.stopIperf = function(options) {
     }.bind(this));
 };
 
-pixelix.ws.Client.prototype.triggerButton = function() {
+pixelix.ws.Client.prototype.triggerButton = function(options) {
     return new Promise(function(resolve, reject) {
+        var par = null;
+
         if (null === this._socket) {
             reject();
         } else {
+
+            if ("number" === typeof options.actionId) {
+                par = options.actionId.toString();
+            }
+
             this._sendCmd({
                 name: "BUTTON",
-                par: null,
+                par: par,
                 resolve: resolve,
                 reject: reject
             });

@@ -1,0 +1,198 @@
+@startuml
+
+title Plugin Service
+
+interface IPluginMaintenance {
+
+    + {abstract} setSlot(slot : const ISlotPlugin&) = 0 : void
+    + {abstract} getUID() const = 0 : uint16_t
+    + {abstract} setAlias(alias : const String&) = 0 : uint16_t
+    + {abstract} getAlias() const = 0 : String
+    + {abstract} getTopics(topics : JsonArray&) const = 0 : void
+    + {abstract} getTopic(topic : const String&, value : JsonObject&) const = 0 : bool
+    + {abstract} setTopic(topic : const String&, value : const JsonObject&) const = 0 : bool
+    + {abstract} hasTopicChanged(topic : const String&) = 0 : void
+    + {abstract} isUploadAccepted(topic : const String&, srcFilename : const String&, dstFilename : String&) const = 0 : bool
+    + {abstract} getName() const = 0 : const char*
+    + {abstract} enable() = 0 : void
+    + {abstract} disable() = 0 : void
+    + {abstract} isEnabled() const = 0 : bool
+    + {abstract} start(width : uint16_t, height : uint16_t) = 0 : void
+    + {abstract} process(isConnected : bool) = 0 : void
+    + {abstract} stop() = 0 : void
+    + {abstract} active(gfx : IGfx&) = 0 : void
+    + {abstract} inactive() = 0 : void
+    + {abstract} update(gfx: IGfx&) = 0 : void
+}
+
+note top of IPluginMaintenance
+    This is plugin interface mainly used by the display manager
+    to maintain the plugin.
+end note
+
+interface CreateFunc {
+    + (*)(name : const String&, uid : uint16_t) : IPluginMaintenance*
+}
+
+note right of CreateFunc
+    Interface of plugin creation function.
+end note
+
+class Plugin {
+
+    + m_name : String
+    + m_isEnabled : bool
+    + m_uid : uint16_t
+
+    + Plugin(name : const String&, uid : uint16_t)
+    + setSlot(slot : const ISlotPlugin&) : void
+    + getUID() const : uint16_t
+    + setAlias(alias : const String&) : uint16_t
+    + getAlias() const : String
+    + getTopic(topic : const String&, value : JsonObject&) const : bool
+    + setTopic(topic : const String&, value : const JsonObject&) const : bool
+    + isUploadAccepted(topic : const String&, srcFilename : const String&, dstFilename : String&) const : bool
+    + getName() : const char*
+    + enable() : void
+    + disable() : void
+    + isEnabled() : bool
+    + start(width : uint16_t, height : uint16_t) : void
+    + process(isConnected : bool) : void
+    + stop() : void
+    + active(gfx : IGfx&) : void
+    + inactive() : void
+}
+
+note right of Plugin
+    Base class which provides all methods of the plugin
+    maintenance interface, except the update() method.
+    The advantage is that a concrete plugin must not implement
+    all methods, but only the ones which are really required
+    for its functionality.
+end note
+
+class ConcretePlugin {
+    + {static} create(name : const String&, uid : uint16_t) : IPluginMaintenance*
+    + update(gfx: IGfx&) : void
+}
+
+note bottom of ConcretePlugin
+    Each plugin represents its own functionality.
+    If a plugin is scheduled by the display manager,
+    it can draw on the display.
+
+    The plugin specific interface must be protected
+    against concurrent access. This is the case if
+    a REST page is accessed from the webserver task.
+end note
+
+interface ISlotPlugin {
+
+    + {abstract} getDuration() const = 0 : uint32_t
+}
+
+class Slot {
+    - m_plugin : IPluginMaintenance*
+    - m_duration: uint32_t
+    - m_isLocked : bool
+    + getPlugin() : IPluginMaintenance*
+    + setPlugin(plugin : IPluginMaintenance*) : bool
+    + isEmpty() const : bool
+    + getDuration() const : uint32_t
+    + setDuration(duration : uint32_t) : void
+    + lock() : void
+    + unlock() : void
+    + isLocked() const : bool
+}
+
+note bottom of Slot
+    Design decision:
+    The slot interface shall only be
+    used by the display manager, otherwise
+    its necessary to protect the slots
+    against concurrent access.
+end note
+
+class DisplayMgr <<singleton>> {
+    - m_slots : Slot*
+    - m_maxSlots : uint8_t
+    - m_selectedSlot : uint8_t
+    + installPlugin(plugin : IPluginMaintenance*, slotId : uint8_t) : bool
+    + uninstallPlugin(plugin : IPluginMaintenance*) : void
+    + getSlotIdByPluginUID(uid : uint16_t) const : uint8_t
+    + getPluginInSlot(slotId : uint8_t) : IPluginMaintenance*
+    + activatePlugin(plugin : IPluginMaintenance*) : void
+    + movePluginToSlot(plugin : IPluginMaintenance*, slotId : uint8_t) : bool
+    + lockSlot(slotId : uint8_t) : void
+    + unlockSlot(slotId : uint8_t) : void
+    + isSlotLocked(slotId : uint8_t) : bool
+    + getSlotDuration(slotId : uint8_t) : uint32_t
+    + setSlotDuration(slotId : uint8_t, duration : uint32_t) : bool
+}
+
+note right of DisplayMgr
+    Interface is protected against
+    concurrent access by different tasks.
+end note
+
+class Task
+
+class PluginFactory
+
+note left of PluginFactory
+    All plugins are registered in the factory.
+    The plugin manager uses the factory to create
+    the plugin instances.
+end note
+
+class PluginMgr <<singleton>>
+
+note left of PluginMgr
+    The plugin manager is able to load/save the
+    plugin configuration in persistent memory.
+    Per plugin are stored:
+    * Name
+    * UID
+    The order of saving plugins in persistent memory
+    is according to the slot number, they are
+    plugged in.
+
+    The plugin manager handles the whole REST API
+    registration for the plugins by requesting the
+    plugin topics.
+
+    The REST API URL depends on the plugin UID or alias:
+    * <base-uri>/rest/api/v1/display/uid/<plugin-uid>
+    * <base-uri>/rest/api/v1/display/alias/<plugin-alias>
+end note
+
+class ESPAsyncWebserver
+
+PluginFactory <-- PluginMgr
+
+CreateFunc --+ IPluginMaintenance
+
+IPluginMaintenance <|.. Plugin: <<realize>>
+ISlotPlugin <.... Plugin: <<use>>
+
+Plugin <|-- ConcretePlugin
+CreateFunc <|.... ConcretePlugin: <<realize>>
+
+ISlotPlugin <|.. Slot: <<realize>>
+
+DisplayMgr ....> IPluginMaintenance: <<use>>
+DisplayMgr o---> Slot
+
+Slot --> IPluginMaintenance
+
+Task <--- DisplayMgr
+
+PluginMgr o--> IPluginMaintenance: <<contains>>
+PluginMgr .> DisplayMgr: <<use>>
+
+Task <-- ESPAsyncWebserver
+
+ESPAsyncWebserver ..> DisplayMgr: <<use>>
+ESPAsyncWebserver ..> PluginMgr: <<use>>
+
+@enduml

@@ -1,6 +1,6 @@
 /* MIT License
  *
- * Copyright (c) 2019 - 2021 Andreas Merkle <web@blue-andi.de>
+ * Copyright (c) 2019 - 2023 Andreas Merkle <web@blue-andi.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -33,8 +33,9 @@
  * Includes
  *****************************************************************************/
 #include "ConnectingState.h"
-#include "Settings.h"
 #include "SysMsg.h"
+#include "Services.h"
+#include "SensorDataProvider.h"
 
 #include "IdleState.h"
 #include "ConnectedState.h"
@@ -42,6 +43,8 @@
 
 #include <WiFi.h>
 #include <Logging.h>
+#include <Util.h>
+#include <SettingsService.h>
 
 /******************************************************************************
  * Compiler Switches
@@ -69,20 +72,27 @@
 
 void ConnectingState::entry(StateMachine& sm)
 {
-    /* Are remote wifi network informations available? */
-    if (true == Settings::getInstance().open(true))
-    {
-        m_wifiSSID          = Settings::getInstance().getWifiSSID().getValue();
-        m_wifiPassphrase    = Settings::getInstance().getWifiPassphrase().getValue();
+    SettingsService& settings = SettingsService::getInstance();
 
-        Settings::getInstance().close();
+    /* Are remote wifi network informations available? */
+    if (true == settings.open(true))
+    {
+        m_wifiSSID          = settings.getWifiSSID().getValue();
+        m_wifiPassphrase    = settings.getWifiPassphrase().getValue();
+        m_isQuiet           = settings.getQuietMode().getValue();
+
+        settings.close();
+    }
+    else
+    {
+        m_isQuiet = settings.getQuietMode().getDefault();
     }
 
     /* No remote wifi network informations available? */
     if ((0 == m_wifiSSID.length()) ||
         (0 == m_wifiPassphrase.length()))
     {
-        String infoStr = "Keep button pressed and reboot. Set SSID/password via webserer.";
+        String infoStr = "Keep button pressed and reboot. Set SSID/password via webserver.";
 
         LOG_INFO(infoStr);
         SysMsg::getInstance().show(infoStr);
@@ -106,8 +116,6 @@ void ConnectingState::entry(StateMachine& sm)
 
         sm.setState(ErrorState::getInstance());
     }
-
-    return;
 }
 
 void ConnectingState::process(StateMachine& sm)
@@ -115,6 +123,8 @@ void ConnectingState::process(StateMachine& sm)
     /* No retry mechanism is running? */
     if (false == m_retryTimer.isTimerRunning())
     {
+        const uint32_t  DURATION_NON_SCROLLING  = 2000U; /* ms */
+        const uint32_t  SCROLLING_REPEAT_NUM    = 1U;
         wl_status_t status      = WL_IDLE_STATUS;
         String      infoStr     = "Connecting to ";
 
@@ -122,7 +132,11 @@ void ConnectingState::process(StateMachine& sm)
         infoStr += ".";
 
         LOG_INFO(infoStr);
-        SysMsg::getInstance().show(infoStr, 2000U, 1U, true);
+
+        if (false == m_isQuiet)
+        {
+            SysMsg::getInstance().show(infoStr, DURATION_NON_SCROLLING, SCROLLING_REPEAT_NUM);
+        }
 
         /* Remote wifi network informations are available, try to establish a connection. */
         status = WiFi.begin(m_wifiSSID.c_str(), m_wifiPassphrase.c_str());
@@ -166,7 +180,8 @@ void ConnectingState::process(StateMachine& sm)
         }
     }
 
-    return;
+    Services::processAll();
+    SensorDataProvider::getInstance().process();
 }
 
 void ConnectingState::exit(StateMachine& sm)
@@ -174,7 +189,6 @@ void ConnectingState::exit(StateMachine& sm)
     UTIL_NOT_USED(sm);
 
     /* Nothing to do. */
-    return;
 }
 
 /******************************************************************************

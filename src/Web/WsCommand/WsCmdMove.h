@@ -1,6 +1,6 @@
 /* MIT License
  *
- * Copyright (c) 2019 - 2021 Andreas Merkle <web@blue-andi.de>
+ * Copyright (c) 2019 - 2023 Andreas Merkle <web@blue-andi.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -33,8 +33,8 @@
  * @{
  */
 
-#ifndef __WSCMDMOVE_H__
-#define __WSCMDMOVE_H__
+#ifndef WSCMDMOVE_H
+#define WSCMDMOVE_H
 
 /******************************************************************************
  * Compile Switches
@@ -45,6 +45,7 @@
  *****************************************************************************/
 #include "WsCmd.h"
 #include "DisplayMgr.h"
+#include "SlotList.h"
 
 /******************************************************************************
  * Macros
@@ -69,7 +70,7 @@ public:
         m_isError(false),
         m_parCnt(0U),
         m_uid(0U),
-        m_slotId(DisplayMgr::SLOT_ID_INVALID)
+        m_slotId(SlotList::SLOT_ID_INVALID)
     {
     }
 
@@ -110,6 +111,6 @@ private:
  * Functions
  *****************************************************************************/
 
-#endif  /* __WSCMDMOVE_H__ */
+#endif  /* WSCMDMOVE_H */
 
 /** @} */

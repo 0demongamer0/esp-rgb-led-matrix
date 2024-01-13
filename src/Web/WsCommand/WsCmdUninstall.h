@@ -1,6 +1,6 @@
 /* MIT License
  *
- * Copyright (c) 2019 - 2021 Andreas Merkle <web@blue-andi.de>
+ * Copyright (c) 2019 - 2023 Andreas Merkle <web@blue-andi.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -33,8 +33,8 @@
  * @{
  */
 
-#ifndef __WSCMDUNINSTALL_H__
-#define __WSCMDUNINSTALL_H__
+#ifndef WSCMDUNINSTALL_H
+#define WSCMDUNINSTALL_H
 
 /******************************************************************************
  * Compile Switches
@@ -44,7 +44,7 @@
  * Includes
  *****************************************************************************/
 #include "WsCmd.h"
-#include "DisplayMgr.h"
+#include "SlotList.h"
 
 /******************************************************************************
  * Macros
@@ -67,7 +67,7 @@ public:
     WsCmdUninstall() :
         WsCmd("UNINSTALL"),
         m_isError(false),
-        m_slotId(DisplayMgr::SLOT_ID_INVALID)
+        m_slotId(SlotList::SLOT_ID_INVALID)
     {
     }
 
@@ -106,6 +106,6 @@ private:
  * Functions
  *****************************************************************************/
 
-#endif  /* __WSCMDUNINSTALL_H__ */
+#endif  /* WSCMDUNINSTALL_H */
 
 /** @} */

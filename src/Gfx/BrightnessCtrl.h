@@ -1,6 +1,6 @@
 /* MIT License
  *
- * Copyright (c) 2019 - 2021 Andreas Merkle <web@blue-andi.de>
+ * Copyright (c) 2019 - 2023 Andreas Merkle <web@blue-andi.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -33,8 +33,8 @@
  * @{
  */
 
-#ifndef __BRIGHTNESS_CTRL_H__
-#define __BRIGHTNESS_CTRL_H__
+#ifndef BRIGHTNESS_CTRL_H
+#define BRIGHTNESS_CTRL_H
 
 /******************************************************************************
  * Compile Switches
@@ -169,9 +169,11 @@ public:
     /**
      * Initialize brightness controller and set initial display brightness.
      * 
-     * @param[in] display   The display, which to control.
+     * @param[in] display       The display, which to control.
+     * @param[in] minBrightness The minimal brightness in digits [0; 255].
+     * @param[in] maxBrightness The maximal brightness in digits [0; 255].
      */
-    void init(IDisplay& display);
+    void init(IDisplay& display, uint8_t minBrightness, uint8_t maxBrightness);
 
     /**
      * Enable/Disable automatic brightness adjustment.
@@ -214,13 +216,13 @@ public:
 
     /**
      * IIR filter time constant in ms for calculating the short-term moving average
-     * of the light sapmles. Used for low latency measurement.
+     * of the light samples. Used for low latency measurement.
      */
     static const uint32_t   SHORT_TERM_AVG_LIGHT_TIME_CONST = 1000U;
 
     /**
      * IIR filter time constant in ms for calculating the long-term moving average
-     * of the light sapmles. Used for the trend analysis.
+     * of the light samples. Used for the trend analysis.
      */
     static const uint32_t   LONG_TERM_AVG_LIGHT_TIME_CONST  = 5000U;
 
@@ -229,7 +231,7 @@ public:
 
     /**
      * Stability requirement in ms for accepting a new brightness level.
-     * It controls how quickly a brightness change occure in response
+     * It controls how quickly a brightness change occurs in response
      * to an observed change in light level that exceeds the hysteresis
      * threshold.
      */
@@ -237,7 +239,7 @@ public:
 
     /**
      * Stability requirement in ms for accepting a new brightness level.
-     * It controls how quickly a brightness change occure in response
+     * It controls how quickly a brightness change occurs in response
      * to an observed change in light level that exceeds the hysteresis
      * threshold.
      */
@@ -262,9 +264,9 @@ public:
 private:
 
     /** Direction of ambient light changes. */
-    enum AbientLightDirection
+    enum AmbientLightDirection
     {
-        AMBIENT_LIGHT_DIRECTION_BRIGTHER = 0,   /**< Its getting brighter. */
+        AMBIENT_LIGHT_DIRECTION_BRIGHTER = 0,   /**< Its getting brighter. */
         AMBIENT_LIGHT_DIRECTION_DARKER          /**< Its getting darker. */
     };
 
@@ -317,7 +319,7 @@ private:
     /**
      * Direction of changing ambient light.
      */
-    AbientLightDirection        m_direction;
+    AmbientLightDirection       m_direction;
 
     /**
      * Brightness goal in digits [0; 255].
@@ -378,6 +380,6 @@ private:
  * Functions
  *****************************************************************************/
 
-#endif  /* __BRIGHTNESS_CTRL_H__ */
+#endif  /* BRIGHTNESS_CTRL_H */
 
 /** @} */

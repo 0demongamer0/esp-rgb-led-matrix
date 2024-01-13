@@ -1,0 +1,260 @@
+@startuml
+
+package "Adafruit" {
+
+    class "GFXglyph" as gfxGlyph
+    class "GFXfont" as gfxFont
+
+    gfxGlyph <--* gfxFont
+}
+
+note top of Adafruit
+    Only a copy from the Adafruit-GFX-Library to
+    be able to use the font files without change.
+    https://github.com/adafruit/Adafruit-GFX-Library/blob/master/gfxfont.h
+end note
+
+class "BaseGfxBitmap<TColor>" as baseGfxBitmap {
+}
+
+note right of baseGfxBitmap
+    Pixel container,
+    independed of the color type.
+    Accessible over the GFX interface.
+end note
+
+class "BaseGfxStaticBitmap<TColor, width : uint16_t, height : uint16_t>" as baseGfxStaticBitmap {
+    + getWidth() const : uint16_t
+    + getHeight() const : uint16_t
+    + getColor(x : int16_t, y : int16_t) = 0 : TColor&
+    + getColor(x : int16_t, y : int16_t) const : const TColor&
+    + drawPixel(x : int16_t, y : int16_t, color : const TColor&) : void
+}
+
+note top of baseGfxStaticBitmap
+    Concrete pixel container with static internal
+    pixel buffer, independend of the color type.
+end note
+
+class "BaseGfxDynamicBitmap<TColor>" as baseGfxDynamicBitmap {
+    + BaseGfxDynamicBitmap(width : uint16_t, height : uint16_t)
+    + create(width : uint16_t, height : uint16_t) : bool
+    + release()
+    + isAllocated() : bool
+    + getWidth() const : uint16_t
+    + getHeight() const : uint16_t
+    + getColor(x : int16_t, y : int16_t) = 0 : TColor&
+    + getColor(x : int16_t, y : int16_t) const : const TColor&
+    + drawPixel(x : int16_t, y : int16_t, color : const TColor&) : void
+}
+
+note top of baseGfxDynamicBitmap
+    Concrete pixel container with dynamic internal
+    pixel buffer, independend of the color type.
+end note
+
+class "BaseGfxOverlayBitmap<TColor>" as baseGfxOverlayBitmap {
+    + baseGfxOverlayBitmap(gfx : BaseGfx<TColor>&)
+    + getWidth() const : uint16_t
+    + getHeight() const : uint16_t
+    + getColor(x : int16_t, y : int16_t) = 0 : TColor&
+    + getColor(x : int16_t, y : int16_t) const : const TColor&
+    + drawPixel(x : int16_t, y : int16_t, color : const TColor&) : void
+}
+
+note top of baseGfxOverlayBitmap
+    Maps the bitmap interface to a GFX inherited class.
+    This is helpful, e.g. in case a BaseGfxMap shall
+    be drawn.
+end note
+
+class "BaseGfx<TColor>" as baseGfx {
+    + {abstract} getWidth() const = 0 : uint16_t
+    + {abstract} getHeight() const = 0 : uint16_t
+    + {abstract} getColor(x : int16_t, y : int16_t) = 0 : TColor&
+    + {abstract} getColor(x : int16_t, y : int16_t) const = 0 : const TColor&
+    + {abstract} drawPixel(x : int16_t, y : int16_t, color : const TColor&) = 0 : void
+    + drawVLine(x : int16_t, y : int16_t, width : uint16_t) : void
+    + drawHLine(x : int16_t, y : int16_t, height : uint16_t) : void
+    + drawLine(xs : int16_t, ys : int16_t, xe : int16_t, ye : int16_t, color : const TColor&) : void
+    + drawRectangle(x : int16_t, y : int16_t, width : uint16_t, height : uint16_t, color : const TColor&) : void
+    + fillRect(x : int16_t, y : int16_t, width : uint16_t, height : uint16_t, color : const TColor&) : void
+    + fillScreen(color : const TColor&) : void
+    + drawBitmap(x : int16_t, y : int16_t, bitmap : BaseGfxBitmap&) : void
+}
+
+baseGfxBitmap <.. baseGfx
+baseGfx <|-- baseGfxBitmap
+
+baseGfxStaticBitmap --|> baseGfxBitmap
+baseGfxDynamicBitmap --|> baseGfxBitmap
+baseGfxOverlayBitmap --|> baseGfxBitmap
+
+baseGfxOverlayBitmap --> baseGfx
+
+class "BaseGfxMap<TColor>" as baseGfxMap {
+    - m_gfx : BaseGfx<TColor>*
+    - m_offsX : int16_t
+    - m_offsY : int16_t
+    - m_width : uint16_t
+    - m_height : uint16_t
+    + BaseGfxMap(gfx : BaseGfx<TColor>, width : uint16_t, height : uint16_t, offsX : int16_t, offsY : int16_t)
+    + setGfx(gfx : BaseGfx<TColor>&) : void
+    + getOffsX() const : int16_t
+    + getOffsY() const : int16_t
+    + setOffsX(offsX : int16_t) : void
+    + setOffsY(offsY : int16_t) : void
+    + setWidth(width : uint16_t) : void
+    + setHeight(height : uint16_t) : void
+    + getWidth() const : uint16_t
+    + getHeight() const : uint16_t
+    + getColor(x : int16_t, y : int16_t) const : const TColor&
+    + drawPixel(x : int16_t, y : int16_t, color : const TColor&) : void
+}
+
+note left of baseGfxMap
+    A map is like a window over graphic operations.
+    It defines the window size and the offset.
+    It ensures that drawing is kept inside
+    its defined borders (width, height).
+end note
+
+baseGfxMap ---|> baseGfx
+baseGfxMap ---> baseGfx
+
+note left of baseGfx
+    Basic graphics operations,
+    independend of the color type.
+    Color manipulations are not part
+    of the GFX and shall be handled
+    in higher layers, where the color
+    type is known.
+end note
+
+class "BaseFont<TColor>" as baseFont {
+    - m_gfxFont : const GFXfont*
+    + getGfxFont() : const GFXfont*
+    + setGfxFont(gfxFont : const GFXfont*) : void
+    + getHeigth() : uint16_t
+    + getCharBoundingBox(singleChar : char, width : uint16_t&, height : uint16_t) const : bool
+    + drawChar(gfx : BaseGfx<TColor>&, cursorX : int16_t&, cursorY : int16_t&, singleChar : char, color : const TColor&) : void
+}
+
+class "BaseGfxText<TColor>" as baseGfxText {
+    - m_cursorX : int16_t
+    - m_cursorY : int16_t
+    - m_textColor : TColor
+    - m_isTextWrapEnabled : bool
+    - m_font : BaseFont<TColor>
+    + getTextCursorPos(x : int16_t&, y : int16_t&) const : void
+    + getTextCursorPosX() const : int16_t
+    + getTextCursorPosY() const : int16_t
+    + setTextCursorPos(x : int16_t, y : int16_t) : void
+    + getTextColor() const : TColor
+    + setTextColor(color : const TColor&) const : void
+    + isTextWrapEnabled() const : bool
+    + setTextWrap(isEnabled : bool) : void
+    + getFont() const : BaseFont<TColor>&
+    + setFont(font : BaseFont<TColor>&) : void
+    + getTextBoundingBox(width : uint16_t, height : uint16_t, text : const char*, boxWidth : uint16_t&, boxHeight : uint16_t&) : bool
+    + drawChar(gfx : BaseGfx<TColor>&, singleChar : char) : void
+    + drawText(gfx : BaseGfx<TColor>&, text : const char*) : void
+}
+
+gfxFont <-- baseFont
+baseFont <-- baseGfxText
+
+baseFont ......> baseGfx: <<use>>
+baseGfxText ....> baseGfx: <<use>>
+
+class "BaseGfxPen<TColor>" as baseGfxPen {
+    - m_x : int16_t
+    - m_y : int16_t
+    - m_color : TColor
+    - m_gfx : BaseGfx<TColor>&
+    + BaseGfxPen(gfx : BaseGfx<TColor>&)
+    + moveTo(x : int16_t, y : int16_t) : void
+    + lineTo(x : int16_t, y : int16_t) : void
+    + plot(x : int16_t, y : int16_t) : void
+    + getColor() const : TColor
+    + setColor(color : const TColor&) : void
+}
+
+note right of baseGfxPen
+    Basic drawing pen operations,
+    independend of the color type.
+    Every drawing action starts from
+    the current pen position and moves
+    the pen.
+end note
+
+baseGfx <- baseGfxPen: <<draw>>
+
+class YAGfx <<typedef>>
+hide YAGfx members
+
+note left of YAGfx
+    Graphic operations, defined with
+    color type according to display type.
+end note
+
+baseGfx <|-- YAGfx: <<bind>>\nTColor -> Color
+
+class "IDisplay" as iDisplay {
+    + {abstract} begin() = 0 : bool
+    + {abstract} show() = 0 : void
+    + {abstract} isReady() = 0 : bool
+    + {abstract} setBrightness(brightness : uint8_t) = 0 : void
+    + {abstract} clear() = 0 : void
+}
+
+note left of iDisplay
+    The interface for physical display adapters.
+end note
+
+YAGfx <|-- iDisplay
+
+package "HAL" {
+
+    class "Board" as board
+
+    package "3rdPartyLibs" as 3rdPartyLibs {
+    }
+
+    class "Display" as display {
+        + begin() : bool
+        + show() : void
+        + isReady() : bool
+        + setBrightness(brightness : uint8_t) : void
+        + clear() : void
+        + getColor(x : int16_t, y : int16_t) = 0 : TColor&
+        + getColor(x : int16_t, y : int16_t) const : Color&
+        - drawPixel(x : int16_t, y : int16_t, color : const Color&) : void
+        - write(singleChar : uint8_t) : size_t
+    }
+
+    note left of display
+        Represents the physical display and
+        provides the GFX interface to draw inside.
+    end note
+
+    iDisplay <|.... display: <<realize>>
+    3rdPartyLibs <-- display
+    board <.. display: <<use>>
+}
+
+class "DisplayMgr" as displayMgr
+
+note right of displayMgr
+    Manages the display slots, which are shown in
+    round robin order. In a slot a plugin can be
+    installed, which shows informations on the display.
+
+    Note: **The used display is decided at compile time.**
+    **That means concrete, the module specific HAL is choosen**
+    **at compile time by platformio environment.**
+end note
+
+display <.. displayMgr: <<use>>
+
+@enduml

@@ -1,6 +1,6 @@
 /* MIT License
  *
- * Copyright (c) 2019 - 2021 Andreas Merkle Merkle <web@blue-andi.de>
+ * Copyright (c) 2019 - 2023 Andreas Merkle <web@blue-andi.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -33,8 +33,8 @@
  * @{
  */
 
-#ifndef __PLUGINFACTORY_H__
-#define __PLUGINFACTORY_H__
+#ifndef PLUGINFACTORY_H
+#define PLUGINFACTORY_H
 
 /******************************************************************************
  * Compile Switches
@@ -69,8 +69,6 @@ public:
      * Constructs the plugin factory.
      */
     PluginFactory() :
-        m_registry(),
-        m_registryIter(m_registry),
         m_plugins()
     {
     }
@@ -84,14 +82,6 @@ public:
     ~PluginFactory()
     {
     }
-
-    /**
-     * Register a plugin, so the factory is able to produce it.
-     *
-     * @param[in] name          Plugin name
-     * @param[in] createFunc    The plugin creation function.
-     */
-    void registerPlugin(const String& name, IPluginMaintenance::CreateFunc createFunc);
 
     /**
      * Create a plugin by name.
@@ -120,34 +110,9 @@ public:
      */
     void destroyPlugin(IPluginMaintenance* plugin);
 
-    /**
-     * Find first registered plugin type.
-     *
-     * @return If plugin type found, it will return its name otherwise nullptr.
-     */
-    const char* findFirst();
-
-    /**
-     * Find next registered plugin type.
-     *
-     * @return If plugin type found, it will return its name otherwise nullptr.
-     */
-    const char* findNext();
-
 private:
 
-    /**
-     * Plugin registry entry.
-     */
-    struct PluginRegEntry
-    {
-        String                          name;       /**< Plugin name */
-        IPluginMaintenance::CreateFunc  createFunc; /**< Plugin creation function */
-    };
-
-    DLinkedList<PluginRegEntry*>            m_registry;     /**< Plugin registry, which contains all registered plugin types. */
-    DLinkedListIterator<PluginRegEntry*>    m_registryIter; /**< Plugin registry iterator. Exclusive use in findFirst() and findNext()! */
-    DLinkedList<IPluginMaintenance*>        m_plugins;      /**< List with all produced plugin objects. */
+    DLinkedList<IPluginMaintenance*>    m_plugins;  /**< List with all produced plugin objects. */
 
     PluginFactory(const PluginFactory& factory);
     PluginFactory& operator=(const PluginFactory& factory);
@@ -164,6 +129,6 @@ private:
  * Functions
  *****************************************************************************/
 
-#endif  /* __PLUGINFACTORY_H__ */
+#endif  /* PLUGINFACTORY_H */
 
 /** @} */

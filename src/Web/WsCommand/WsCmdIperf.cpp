@@ -1,6 +1,6 @@
 /* MIT License
  *
- * Copyright (c) 2019 - 2021 Andreas Merkle <web@blue-andi.de>
+ * Copyright (c) 2019 - 2023 Andreas Merkle <web@blue-andi.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -37,6 +37,8 @@
 #include <Logging.h>
 #include <Util.h>
 
+#if CONFIG_FEATURE_IPERF == 1
+
 /******************************************************************************
  * Compiler Switches
  *****************************************************************************/
@@ -72,43 +74,48 @@ void WsCmdIperf::execute(AsyncWebSocket* server, AsyncWebSocketClient* client)
     /* Any error happended? */
     if (true == m_isError)
     {
-        server->text(client->id(), "NACK;\"Parameter invalid.\"");
+        sendNegativeResponse(server, client, "\"Parameter invalid.\"");
     }
     /* Get iperf status? */
     else if (CMD_STATUS == m_cmd)
     {
-        String      rsp         = "ACK";
-        const char  DELIMITER   = ';';
+        String msg;
 
-        rsp += DELIMITER;
+        preparePositiveResponse(msg);
 
         if (false == m_isIperfRunning)
         {
-            rsp += "0";
+            msg += "0";
         }
         else
         {
-            rsp += "1";
+            msg += "1";
         }
         
-        server->text(client->id(), rsp);
+        sendResponse(server, client, msg);
     }
     /* Start iperf? */
     else if (CMD_START == m_cmd)
     {
         if (ESP_OK != iperf_start(&m_cfg))
         {
-            server->text(client->id(), "NACK;\"Starting failed.\"");
+            sendNegativeResponse(server, client, "\"Failed to start.\"");
         }
         else
         {
+            String msg;
+            
+            preparePositiveResponse(msg);
+
+            msg += "1";
+
             LOG_INFO("iperf started: mode = %s-%s sip = %u.%u.%u.%u:%u, interval = %us, time = %us",
                 (m_cfg.flag & IPERF_FLAG_TCP) ? "tcp" : "udp",
                 (m_cfg.flag & IPERF_FLAG_SERVER) ? "server" : "client",
                 m_cfg.sip & 0xffU, (m_cfg.sip >> 8) & 0xffU, (m_cfg.sip >> 16) & 0xffU, (m_cfg.sip >>24) & 0xffU, m_cfg.sport,
                 m_cfg.interval, m_cfg.time);
 
-            server->text(client->id(), "ACK;1");
+            sendResponse(server, client, msg);
         }
     }
     /* Stop iperf? */
@@ -116,17 +123,24 @@ void WsCmdIperf::execute(AsyncWebSocket* server, AsyncWebSocketClient* client)
     {
         if (ESP_OK != iperf_stop())
         {
-            server->text(client->id(), "NACK;\"Stopping failed.\"");
+            sendNegativeResponse(server, client, "\"Failed to stop.\"");
         }
         else
         {
+            String msg;
+            
+            preparePositiveResponse(msg);
+            
+            msg += "0";
+
             LOG_INFO("iperf stopped.");
-            server->text(client->id(), "ACK;0");
+
+            sendResponse(server, client, msg);
         }
     }
     else
     {
-        server->text(client->id(), "NACK;\"Parameter invalid.\"");        
+        sendNegativeResponse(server, client, "\"Parameter invalid.\"");        
     }
 
     m_isError   = false;
@@ -134,8 +148,6 @@ void WsCmdIperf::execute(AsyncWebSocket* server, AsyncWebSocketClient* client)
     m_cmd       = CMD_STATUS;
 
     setCfgDefault();
-
-    return;
 }
 
 void WsCmdIperf::setPar(const char* par)
@@ -219,8 +231,6 @@ void WsCmdIperf::setPar(const char* par)
     }
 
     ++m_parCnt;
-
-    return;
 }
 
 /******************************************************************************
@@ -250,3 +260,5 @@ void WsCmdIperf::setCfgDefault()
 /******************************************************************************
  * Local Functions
  *****************************************************************************/
+
+#endif /* CONFIG_FEATURE_IPERF == 1 */

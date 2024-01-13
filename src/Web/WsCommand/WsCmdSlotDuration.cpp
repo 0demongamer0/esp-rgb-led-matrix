@@ -1,6 +1,6 @@
 /* MIT License
  *
- * Copyright (c) 2019 - 2021 Andreas Merkle <web@blue-andi.de>
+ * Copyright (c) 2019 - 2023 Andreas Merkle <web@blue-andi.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -34,6 +34,7 @@
  *****************************************************************************/
 #include "WsCmdSlotDuration.h"
 #include "DisplayMgr.h"
+#include "PluginMgr.h"
 
 #include <Logging.h>
 #include <Util.h>
@@ -73,28 +74,30 @@ void WsCmdSlotDuration::execute(AsyncWebSocket* server, AsyncWebSocketClient* cl
     /* Any error happended? */
     if (true == m_isError)
     {
-        server->text(client->id(), "NACK;\"Parameter invalid.\"");
+        sendNegativeResponse(server, client, "\"Parameter invalid.\"");
     }
     else
     {
-        String      rsp         = "ACK";
-        const char  DELIMITER   = ';';
+        String msg;
 
         if (2U == m_parCnt)
         {
-            (void)DisplayMgr::getInstance().setSlotDuration(m_slotId, m_slotDuration);
+            if (true == DisplayMgr::getInstance().setSlotDuration(m_slotId, m_slotDuration))
+            {
+                /* Ensure that the duration will be available after power-up. */
+                PluginMgr::getInstance().save();
+            }
         }
 
-        rsp += DELIMITER;
-        rsp += DisplayMgr::getInstance().getSlotDuration(m_slotId);
+        preparePositiveResponse(msg);
 
-        server->text(client->id(), rsp);
+        msg += DisplayMgr::getInstance().getSlotDuration(m_slotId);
+
+        sendResponse(server, client, msg);
     }
 
     m_isError = false;
     m_parCnt = 0U;
-
-    return;
 }
 
 void WsCmdSlotDuration::setPar(const char* par)
@@ -123,8 +126,6 @@ void WsCmdSlotDuration::setPar(const char* par)
     }
 
     ++m_parCnt;
-
-    return;
 }
 
 /******************************************************************************

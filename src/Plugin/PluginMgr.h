@@ -1,6 +1,6 @@
 /* MIT License
  *
- * Copyright (c) 2019 - 2021 Andreas Merkle Merkle <web@blue-andi.de>
+ * Copyright (c) 2019 - 2023 Andreas Merkle <web@blue-andi.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -33,8 +33,8 @@
  * @{
  */
 
-#ifndef __PLUGINMGR_H__
-#define __PLUGINMGR_H__
+#ifndef PLUGINMGR_H
+#define PLUGINMGR_H
 
 /******************************************************************************
  * Compile Switches
@@ -44,12 +44,10 @@
  * Includes
  *****************************************************************************/
 #include <stdint.h>
-#include "IPluginMaintenance.hpp"
-#include "DisplayMgr.h"
+#include "SlotList.h"
 #include "PluginFactory.h"
 
-#include <LinkedList.hpp>
-#include <ESPAsyncWebServer.h>
+#include <IPluginMaintenance.hpp>
 
 /******************************************************************************
  * Macros
@@ -86,14 +84,6 @@ public:
     void begin();
 
     /**
-     * Register a plugin.
-     *
-     * @param[in] name          Plugin name
-     * @param[in] createFunc    The plugin creation function.
-     */
-    void registerPlugin(const String& name, IPluginMaintenance::CreateFunc createFunc);
-
-    /**
      * Install plugin.
      * If no slot id is given, the plugin will be installed in the next available slot.
      *
@@ -102,7 +92,7 @@ public:
      *
      * @return If successful, it will return a pointer to the plugin instance, otherwise nullptr.
      */
-    IPluginMaintenance* install(const String& name, uint8_t slotId = DisplayMgr::SLOT_ID_INVALID);
+    IPluginMaintenance* install(const String& name, uint8_t slotId = SlotList::SLOT_ID_INVALID);
 
     /**
      * Uninstall plugin.
@@ -114,22 +104,8 @@ public:
     bool uninstall(IPluginMaintenance* plugin);
 
     /**
-     * Find first plugin.
-     *
-     * @return If plugin found, it will return its name otherwise nullptr.
-     */
-    const char* findFirst();
-
-    /**
-     * Find next plugin.
-     *
-     * @return If plugin found, it will return its name otherwise nullptr.
-     */
-    const char* findNext();
-
-    /**
      * Set the alias name of a plugin.
-     * If the plugin has registered a REST API, the corresponding URIs will be updated.
+     * If the plugin has registered a topic handler, the corresponding URIs will be updated.
      * 
      * @param[in] plugin    Plugin which to assign the alias name
      * @param[in] alias     Plugin alias name
@@ -138,89 +114,46 @@ public:
     bool setPluginAliasName(IPluginMaintenance* plugin, const String& alias);
 
     /**
-     * Get plugin REST base URI to identify plugin by UID.
-     *
-     * @param[in] uid   Plugin UID
-     *
-     * @return Plugin REST API base URI
+     * Unregister all plugin topics from the topic handler service.
+     * The plugins will still be installed, but won't get any update from outside.
      */
-    String getRestApiBaseUriByUid(uint16_t uid);
-
-    /**
-     * Get plugin REST base URI to identify plugin by alias name.
-     *
-     * @param[in] alias Plugin alias name
-     *
-     * @return Plugin REST API base URI
-     */
-    String getRestApiBaseUriByAlias(const String& alias);
+    void unregisterAllPluginTopics();
 
     /**
      * Load plugin installation from persistent memory.
      * It will automatically enable the installed plugins.
+     * 
      * If a slot already contains a plugin, this slot won't change.
+     * If loading fails, no plugin at all will be installed.
+     * 
+     * @return If successful, it will return true otherwise false.
      */
-    void load();
+    bool load();
 
     /**
      * Save plugin installation to persistent memory.
      */
     void save();
 
+    /**
+     * Filename of slot configuration.
+     */
+    static const char*  CONFIG_FILE_NAME;
+
 private:
 
-    /**
-     * Web handler data, which is necessary for the webserver handling.
-     */
-    struct WebHandlerData
-    {
-        AsyncCallbackWebHandler*    webHandler;     /**< Webhandler callback, necessary to remove it later again. */
-        String                      uri;            /**< URI where the handler is registered. */
-        bool                        isUploadError;  /**< If upload error happened, it will be true otherwise false. */
-        String                      fullPath;       /**< Full path of uploaded file. If empty, there is no file available. */
-        File                        fd;             /**< Upload file descriptor */
+    /** MQTT special characters, which shall not be part of a plugin alias. */
+    static const char*  MQTT_SPECIAL_CHARACTERS;
 
-        /**
-         * Initialize the web handler data.
-         */
-        WebHandlerData() :
-            webHandler(nullptr),
-            uri(),
-            isUploadError(false),
-            fullPath(),
-            fd()
-        {
-        }
-    };
-
-    /**
-     * Plugin object specific data, used for plugin management.
-     */
-    struct PluginObjData
-    {
-        static const uint8_t MAX_WEB_HANDLERS = 16U; /**< Max. number of web handlers. */
-
-        IPluginMaintenance* plugin;                         /**< Plugin object, where this data record belongs to. */
-        WebHandlerData      webHandlers[MAX_WEB_HANDLERS];  /**< Web data of the plugin, necessary to remove it later again. */
-
-        /**
-         * Initializes the plugin object data.
-         */
-        PluginObjData() :
-            plugin(nullptr),
-            webHandlers()
-        {
-        }
-    };
-
-    PluginFactory               m_pluginFactory;    /**< The plugin factory with the plugin type registry. */
-    DLinkedList<PluginObjData*> m_pluginMeta;       /**< Plugin object management information. */
+    PluginFactory   m_pluginFactory;    /**< The plugin factory with the plugin type registry. */
+    String          m_deviceId;         /**< Device id, used for topic registration. */
 
     /**
      * Constructs the plugin manager.
      */
     PluginMgr() :
-        m_pluginFactory()
+        m_pluginFactory(),
+        m_deviceId()
     {
     }
 
@@ -236,10 +169,27 @@ private:
     PluginMgr& operator=(const PluginMgr& fab);
 
     /**
+     * Check dynamic JSON document for overflow and log a corresponding message,
+     * otherwise log its document size.
+     * 
+     * @param[in] jsonDoc   Dynamic JSON document, which to check.
+     * @param[in] line      Line number where the document is handled in the module.
+     */
+    void checkJsonDocOverflow(const DynamicJsonDocument& jsonDoc, int line);
+
+    /**
      * If configuration directory doesn't exists, it will be created.
      * Otherwise nothing happens.
      */
     void createPluginConfigDirectory();
+
+    /**
+     * Prepares a slot according to the given configuration.
+     * 
+     * @param[in]   slotId      The ID of the slot.
+     * @param[in]   jsonSlot    Slot configuration
+     */
+    void prepareSlotByConfiguration(uint8_t slotId, const JsonObject& jsonSlot);
 
     /**
      * Install plugin.
@@ -272,60 +222,29 @@ private:
     bool installToSlot(IPluginMaintenance* plugin, uint8_t slotId);
 
     /**
-     * Register all topics of the given plugin depended on the used communication
-     * networks.
+     * Checks whether the alias is valid. It will check for not compliant
+     * special characters.
      * 
-     * @param[in] plugin    The plugin, which shall be handled.
+     * @param[in] alias Plugin alias
+     * 
+     * @return If plugin alias is valid, it will return true otherwise false.
      */
-    void registerTopics(IPluginMaintenance* plugin);
+    bool isPluginAliasValid(const String& alias);
 
     /**
-     * Register a single topic of the given plugin depended on the used communication
-     * networks.
+     * Filters not allowed characters out of the plugin alias.
      * 
-     * @param[in] baseUri   The REST API base URI.
-     * @param[in] metaData  The plugin meta data, which shall be handled.
-     * @param[in] topic     The topic.
-     */
-    void registerTopic(const String& baseUri, PluginObjData* metaData, const String& topic);
-
-    /**
-     * The web request handler handles all incoming HTTP requests for every plugin topic.
+     * @param[in] alias Plugin alias
      * 
-     * @param[in] request           The web request information from the client.
-     * @param[in] plugin            The responsible plugin, which is related to the request.
-     * @param[in] topic             The topic, which is requested.
-     * @param[in] webHandlerData    Plugin web handler data, which is related to this request.
+     * @return Filtered plugin alias
      */
-    void webReqHandler(AsyncWebServerRequest *request, IPluginMaintenance* plugin, const String& topic, WebHandlerData* webHandlerData);
-
-    /**
-     * File upload handler.
-     *
-     * @param[in] request           HTTP request.
-     * @param[in] filename          Name of the uploaded file.
-     * @param[in] index             Current file offset.
-     * @param[in] data              Next data part of file, starting at offset.
-     * @param[in] len               Data part size in byte.
-     * @param[in] final             Is final packet or not.
-     * @param[in] plugin            The responsible plugin, which is related to the upload.
-     * @param[in] topic             The topic, which is requested.
-     * @param[in] webHandlerData    Plugin web handler data, which is related to this upload.
-     */
-    void uploadHandler(AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final, IPluginMaintenance* plugin, const String& topic, WebHandlerData* webHandlerData);
-
-    /**
-     * Unregister all topics depended on the used communication networks.
-     * 
-     * @param[in] plugin    The plugin, which topics to unregister.
-     */
-    void unregisterTopics(IPluginMaintenance* plugin);
+    String filterPluginAlias(const String& alias);
 };
 
 /******************************************************************************
  * Functions
  *****************************************************************************/
 
-#endif  /* __PLUGINMGR_H__ */
+#endif  /* PLUGINMGR_H */
 
 /** @} */

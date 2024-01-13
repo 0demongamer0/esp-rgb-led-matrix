@@ -1,6 +1,6 @@
 /* MIT License
  *
- * Copyright (c) 2019 - 2021 Andreas Merkle <web@blue-andi.de>
+ * Copyright (c) 2019 - 2023 Andreas Merkle <web@blue-andi.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -72,12 +72,11 @@ void WsCmdLog::execute(AsyncWebSocket* server, AsyncWebSocketClient* client)
     /* Any error happended? */
     if (true == m_isError)
     {
-        server->text(client->id(), "NACK;\"Parameter invalid.\"");
+        sendNegativeResponse(server, client, "\"Parameter invalid.\"");
     }
     else
     {
-        String      rsp             = "ACK";
-        const char  DELIMITER       = ';';
+        String      msg;
         LogSink*    selectedSink    = nullptr;
 
         /* Set logging on/off? */
@@ -93,27 +92,25 @@ void WsCmdLog::execute(AsyncWebSocket* server, AsyncWebSocketClient* client)
             }
         }
 
-        rsp += DELIMITER;
-
         selectedSink = Logging::getInstance().getSelectedSink();
+
+        preparePositiveResponse(msg);
 
         if ((nullptr == selectedSink) ||
             (selectedSink->getName() != "Websocket"))
         {
-            rsp += "0";
+            msg += "0";
         }
         else
         {
-            rsp += "1";
+            msg += "1";
         }
 
-        server->text(client->id(), rsp);
+        sendResponse(server, client, msg);
     }
 
     m_cnt       = 0U;
     m_isError   = false;
-
-    return;
 }
 
 void WsCmdLog::setPar(const char* par)
@@ -139,8 +136,6 @@ void WsCmdLog::setPar(const char* par)
     {
         m_isError = true;
     }
-
-    return;
 }
 
 /******************************************************************************

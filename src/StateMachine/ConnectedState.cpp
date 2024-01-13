@@ -1,6 +1,6 @@
 /* MIT License
  *
- * Copyright (c) 2019 - 2021 Andreas Merkle <web@blue-andi.de>
+ * Copyright (c) 2019 - 2023 Andreas Merkle <web@blue-andi.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -36,18 +36,21 @@
 #include "SysMsg.h"
 #include "UpdateMgr.h"
 #include "MyWebServer.h"
-#include "Settings.h"
-#include "ClockDrv.h"
-#include "ButtonDrv.h"
 #include "DisplayMgr.h"
+#include "Services.h"
+#include "SensorDataProvider.h"
+#include "PluginMgr.h"
 
 #include "ConnectingState.h"
 #include "RestartState.h"
 #include "ErrorState.h"
+#include "HttpStatus.h"
 
 #include <Arduino.h>
 #include <WiFi.h>
 #include <Logging.h>
+#include <Util.h>
+#include <SettingsService.h>
 
 /******************************************************************************
  * Compiler Switches
@@ -75,22 +78,31 @@
 
 void ConnectedState::entry(StateMachine& sm)
 {
-    String infoStr = "Hostname: ";
-    String hostname;
-    String infoStringIp = "IP: ";
+    SettingsService&    settings        = SettingsService::getInstance();
+    String              infoStr         = "Hostname: ";
+    String              hostname;
+    String              infoStringIp    = "IP: ";
+    String              notifyURL       = "-";
+    bool                isQuiet         = false;
 
     LOG_INFO("Connected.");
 
-    /* Get hostname. */
-    if (false == Settings::getInstance().open(true))
+    /* Get some settings. */
+    if (false == settings.open(true))
     {
         LOG_WARNING("Use default hostname.");
-        hostname = Settings::getInstance().getHostname().getDefault();
+
+        hostname    = settings.getHostname().getDefault();
+        notifyURL   = settings.getNotifyURL().getDefault();
+        isQuiet     = settings.getQuietMode().getDefault();
     }
     else
     {
-        hostname = Settings::getInstance().getHostname().getValue();
-        Settings::getInstance().close();
+        hostname    = settings.getHostname().getValue();
+        notifyURL   = settings.getNotifyURL().getValue();
+        isQuiet     = settings.getQuietMode().getValue();
+
+        settings.close();
     }
 
     /* Set hostname. Note, wifi must be connected somehow. */
@@ -106,25 +118,30 @@ void ConnectedState::entry(StateMachine& sm)
     }
     else
     {
-        /* Start the ClockDriver */
-        ClockDrv::getInstance().init();
+        const uint32_t  DURATION_NON_SCROLLING  = 4000U; /* ms */
+        const uint32_t  SCROLLING_REPEAT_NUM    = 2U;
+
+        /* Notify about successful network connection. */
+        DisplayMgr::getInstance().setNetworkStatus(true);
 
         /* Show hostname and IP. */
         infoStr += WiFi.getHostname(); /* Don't believe its the same as set before. */
         infoStr += " IP: ";
         infoStr += WiFi.localIP().toString();
-        SysMsg::getInstance().show(infoStr, 4000U, 2U);
 
         LOG_INFO(infoStr);
-    }
 
-    return;
+        if (false == isQuiet)
+        {
+            SysMsg::getInstance().show(infoStr, DURATION_NON_SCROLLING, SCROLLING_REPEAT_NUM);
+        }
+
+        pushUrl(notifyURL);
+    }
 }
 
 void ConnectedState::process(StateMachine& sm)
 {
-    ButtonDrv::State    buttonState = ButtonDrv::getInstance().getState();
-
     /* Handle update, there may be one in the background. */
     UpdateMgr::getInstance().process();
 
@@ -143,23 +160,34 @@ void ConnectedState::process(StateMachine& sm)
         sm.setState(ConnectingState::getInstance());
     }
 
-    /* Connect to a remote wifi network? */
-    if (ButtonDrv::STATE_TRIGGERED == buttonState)
-    {
-        DisplayMgr::getInstance().activateNextSlot();
-    }
-
-    return;
+    Services::processAll();
+    SensorDataProvider::getInstance().process();
 }
 
 void ConnectedState::exit(StateMachine& sm)
 {
     UTIL_NOT_USED(sm);
 
-    /* Disconnect all connections */
-    (void)WiFi.disconnect();
+    /* User requested (power off / restart after update) to disconnect? */
+    if (true == WiFi.isConnected())
+    {
+        /* Purge sensor topics (MQTT) */
+        SensorDataProvider::getInstance().end();
 
-    return;
+        /* Unregister all plugins, which will purge all of their topics (MQTT). */
+        PluginMgr::getInstance().unregisterAllPluginTopics();
+
+        /* Stop all services now to allow them having graceful disconnection from
+         * servers until the wifi will be disconnected.
+         */
+        Services::stopAll();
+
+        /* Disconnect wifi connection. */
+        (void)WiFi.disconnect();
+    }
+
+    /* Notify about no network connection. */
+    DisplayMgr::getInstance().setNetworkStatus(false);
 }
 
 /******************************************************************************
@@ -169,6 +197,64 @@ void ConnectedState::exit(StateMachine& sm)
 /******************************************************************************
  * Private Methods
  *****************************************************************************/
+
+void ConnectedState::initHttpClient()
+{
+    m_client.regOnResponse([](const HttpResponse& rsp){
+        uint16_t statusCode = rsp.getStatusCode();
+
+        if (HttpStatus::STATUS_CODE_OK == statusCode)
+        {
+            LOG_INFO("Online state reported.");
+        }
+
+    });
+
+    m_client.regOnError([]() {
+        LOG_WARNING("Connection error happened.");
+   });
+}
+
+void ConnectedState::pushUrl(const String& pushUrl)
+{
+    /* If a push URL is set, notify about the online status. */
+    if (false == pushUrl.isEmpty())
+    {
+        String      url         = pushUrl;
+        const char* GET_CMD     = "get ";
+        const char* POST_CMD    = "post ";
+        bool        isGet       = true;
+
+        /* URL prefix might indicate the kind of request. */
+        url.toLowerCase();
+        if (0U != url.startsWith(GET_CMD))
+        {
+            url = url.substring(strlen(GET_CMD));
+            isGet = true;
+        }
+        else if (0U != url.startsWith(POST_CMD))
+        {
+            url = url.substring(strlen(POST_CMD));
+            isGet = false;
+        }
+        else
+        {
+            ;
+        }
+
+        if (true == m_client.begin(url))
+        {
+            if (false == m_client.GET())
+            {
+                LOG_WARNING("GET %s failed.", url.c_str());
+            }
+            else
+            {
+                LOG_INFO("Notification triggered.");
+            }
+        }
+    }
+}
 
 /******************************************************************************
  * External Functions

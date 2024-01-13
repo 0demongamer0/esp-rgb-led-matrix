@@ -1,7 +1,25 @@
 {
     "name": "HalLedMatrix",
     "version": "0.1.0",
+    "description": "HAL for WS2812 (NeoPixel) LED matrix.",
+    "authors": [{
+        "name": "Andreas Merkle",
+        "email": "web@blue-andi.de",
+        "url": "https://github.com/BlueAndi",
+        "maintainer": true
+    }],
+    "license": "MIT",
     "dependencies": [{
         "name": "Common"
-    }]
+    }, {
+        "name": "Utilities"
+    }, {
+        "name": "YAGfx"
+    }, {
+        "owner": "makuna",
+        "name": "NeoPixelBus",
+        "version": "~2.7.3"
+    }],
+    "frameworks": "*",
+    "platforms": "*"
 }

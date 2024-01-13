@@ -1,6 +1,6 @@
 /* MIT License
  *
- * Copyright (c) 2019 - 2021 Andreas Merkle <web@blue-andi.de>
+ * Copyright (c) 2019 - 2023 Andreas Merkle <web@blue-andi.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -33,7 +33,6 @@
  * Includes
  *****************************************************************************/
 #include "DisplayMgr.h"
-#include "Settings.h"
 #include "BrightnessCtrl.h"
 #include "PluginMgr.h"
 
@@ -41,6 +40,7 @@
 #include <Logging.h>
 #include <ArduinoJson.h>
 #include <Util.h>
+#include <SettingsService.h>
 
 #if (0 != CONFIG_DISPLAY_MGR_ENABLE_STATISTICS)
 #include <StatisticValue.hpp>
@@ -87,120 +87,132 @@ struct Statistics
 
 bool DisplayMgr::begin()
 {
-    bool status = false;
+    bool                status                  = false;
+    bool                isError                 = false;
+    uint8_t             maxSlots                = 0U;
+    uint8_t             brightnessPercent       = 0U;
+    uint8_t             minBrightnessPercent    = 0U;
+    uint8_t             maxBrightnessPercent    = 0U;
+    uint16_t            brightness              = 0U;
+    uint16_t            minBrightness           = 0U;
+    uint16_t            maxBrightness           = 0U;
+    SettingsService&    settings                = SettingsService::getInstance();
+
+    if (false == settings.open(true))
+    {
+        maxSlots            = settings.getMaxSlots().getDefault();
+        brightnessPercent   = settings.getBrightness().getDefault();
+    }
+    else
+    {
+        maxSlots            = settings.getMaxSlots().getValue();
+        brightnessPercent   = settings.getBrightness().getValue();
+
+        settings.close();
+    }
+
+    minBrightnessPercent    = settings.getBrightness().getMin();
+    maxBrightnessPercent    = settings.getBrightness().getMax();
+
+    minBrightness   = (static_cast<uint16_t>(minBrightnessPercent) * UINT8_MAX) / 100U;
+    maxBrightness   = (static_cast<uint16_t>(maxBrightnessPercent) * UINT8_MAX) / 100U;
 
     /* Set the display brightness here just once.
      * There is no need to do this in the process() method periodically.
      */
-    BrightnessCtrl::getInstance().init(Display::getInstance());
-    BrightnessCtrl::getInstance().setBrightness(BRIGHTNESS_DEFAULT);
+    BrightnessCtrl::getInstance().init(Display::getInstance(), minBrightness, maxBrightness);
+    brightness = (static_cast<uint16_t>(brightnessPercent) * UINT8_MAX) / 100U;
+    BrightnessCtrl::getInstance().setBrightness(static_cast<uint8_t>(brightness));
 
     /* No slots available? */
-    if (nullptr == m_slots)
+    if (false == m_slotList.isAvailable())
     {
-        if (false == Settings::getInstance().open(true))
+        if (false == m_slotList.create(maxSlots))
         {
-            m_maxSlots = Settings::getInstance().getMaxSlots().getDefault();
+            LOG_FATAL("Not enough heap space available.");
 
-            LOG_WARNING("Using default number of max. slots.");
-        }
-        else
-        {
-            m_maxSlots = Settings::getInstance().getMaxSlots().getValue();
-            Settings::getInstance().close();
-        }
-
-        if (0 < m_maxSlots)
-        {
-            m_slots = new Slot[m_maxSlots];
-
-            /* Load slot configuration */
-            load();
+            isError = true;
         }
     }
 
-    /* Canvas framebuffers for fading in/out created? */
-    if (nullptr == m_currCanvas)
+    if (false == isError)
     {
-        uint8_t idx     = 0;
-        bool    isError = false;
+        uint8_t idx = 0U;
 
-        for(idx = 0; idx < UTIL_ARRAY_NUM(m_framebuffers); ++idx)
+        /* Allocate framebuffer memory. */
+        for(idx = 0U; idx < UTIL_ARRAY_NUM(m_framebuffers); ++idx)
         {
-            m_framebuffers[idx] = new Canvas(Display::getInstance().getWidth(), Display::getInstance().getHeight(), 0, 0, true);
+            if (false == m_framebuffers[idx].isAllocated())
+            {
+                if (false == m_framebuffers[idx].create(Display::getInstance().getWidth(), Display::getInstance().getHeight()))
+                {
+                    isError = true;
 
-            if (nullptr == m_framebuffers[idx])
+                    LOG_WARNING("Couldn't create framebuffer canvas for fade effect.");
+                }
+            }
+        }
+
+        if (false == isError)
+        {
+            m_selectedFrameBuffer = &m_framebuffers[0U];
+        }
+        else
+        {
+            /* If fade effects are not available, it just looks not so nice but
+            * thats it.
+            */
+            isError = false;
+        }
+
+        if (false == m_mutexInterf.isAllocated())
+        {
+            if (false == m_mutexInterf.create())
             {
                 isError = true;
-                break;
             }
         }
 
-        if (true == isError)
+        if (false == m_mutexUpdate.isAllocated())
         {
-            for(idx = 0; idx < UTIL_ARRAY_NUM(m_framebuffers); ++idx)
+            if (false == m_mutexUpdate.create())
             {
-                if (nullptr != m_framebuffers[idx])
-                {
-                    delete m_framebuffers[idx];
-                    m_framebuffers[idx] = nullptr;
-                }
+                isError = true;
             }
-
-            LOG_WARNING("Couldn't create framebuffer canvas for fade effect.");
         }
-        else
-        {
-            m_currCanvas = m_framebuffers[0];
-        }
-    }
 
-    /* Not started yet? */
-    if ((nullptr == m_taskHandle) &&
-        (nullptr != m_slots))
-    {
-        if (true == m_mutex.create())
+        /* Process task not started yet? */
+        if ((false == isError) &&
+            (nullptr == m_processTaskHandle))
         {
-            /* Create binary semaphore to signal task exit. */
-            m_xSemaphore = xSemaphoreCreateBinary();
-
-            if (nullptr != m_xSemaphore)
+            if (false == createProcessTask())
             {
-                BaseType_t  osRet   = pdFAIL;
+                isError = true;
+            }
+        }
 
-                /* Task shall run */
-                m_taskExit = false;
-
-                osRet = xTaskCreateUniversal(   updateTask,
-                                                "displayTask",
-                                                TASK_STACKE_SIZE,
-                                                this,
-                                                TASK_PRIORITY,
-                                                &m_taskHandle,
-                                                TASK_RUN_CORE);
-
-                /* Task successful created? */
-                if (pdPASS == osRet)
-                {
-                    (void)xSemaphoreGive(m_xSemaphore);
-                    status = true;
-                }
+        /* Update task not started yet? */
+        if ((false == isError) &&
+            (nullptr == m_updateTaskHandle))
+        {
+            if (false == createUpdateTask())
+            {
+                isError = true;
             }
         }
     }
 
     /* Any error happened? */
-    if (false == status)
+    if (true == isError)
     {
-        if (nullptr != m_xSemaphore)
-        {
-            vSemaphoreDelete(m_xSemaphore);
-            m_xSemaphore = nullptr;
-        }
+        destroyProcessTask();
+        destroyUpdateTask();
     }
     else
     {
         LOG_INFO("DisplayMgr is up.");
+
+        status = true;
     }
 
     return status;
@@ -208,32 +220,39 @@ bool DisplayMgr::begin()
 
 void DisplayMgr::end()
 {
-    /* Note, don't destroy the slots and the canvas framebuffers here. They shall live until the system restarts. */
+    uint8_t idx = 0U;
 
     /* Already running? */
-    if (nullptr != m_taskHandle)
+    if (nullptr != m_processTaskHandle)
     {
-        m_taskExit = true;
-
-        /* Join */
-        (void)xSemaphoreTake(m_xSemaphore, portMAX_DELAY);
-        m_taskHandle = nullptr;
-
-        LOG_INFO("DisplayMgr is down.");
-
-        vSemaphoreDelete(m_xSemaphore);
-        m_xSemaphore = nullptr;
-
-        m_mutex.destroy();
+        destroyProcessTask();
     }
 
-    return;
+    if (nullptr != m_updateTaskHandle)
+    {
+        destroyUpdateTask();
+    }
+
+    m_mutexUpdate.destroy();
+    m_mutexInterf.destroy();
+
+    m_selectedFrameBuffer = nullptr;
+
+    /* Release framebuffer memory. */
+    for(idx = 0U; idx < UTIL_ARRAY_NUM(m_framebuffers); ++idx)
+    {
+        m_framebuffers[idx].release();
+    }
+
+    m_slotList.destroy();
+
+    LOG_INFO("DisplayMgr is down.");
 }
 
 bool DisplayMgr::setAutoBrightnessAdjustment(bool enable)
 {
     bool                        status = false;
-    MutexGuard<MutexRecursive>  guard(m_mutex);
+    MutexGuard<MutexRecursive>  guard(m_mutexInterf);
 
     status = BrightnessCtrl::getInstance().enable(enable);
 
@@ -243,7 +262,7 @@ bool DisplayMgr::setAutoBrightnessAdjustment(bool enable)
 bool DisplayMgr::getAutoBrightnessAdjustment(void)
 {
     bool                        isEnabled = false;
-    MutexGuard<MutexRecursive>  guard(m_mutex);
+    MutexGuard<MutexRecursive>  guard(m_mutexInterf);
 
     isEnabled = BrightnessCtrl::getInstance().isEnabled();
 
@@ -252,17 +271,15 @@ bool DisplayMgr::getAutoBrightnessAdjustment(void)
 
 void DisplayMgr::setBrightness(uint8_t level)
 {
-    MutexGuard<MutexRecursive>  guard(m_mutex);
+    MutexGuard<MutexRecursive>  guard(m_mutexInterf);
 
     BrightnessCtrl::getInstance().setBrightness(level);
-
-    return;
 }
 
 uint8_t DisplayMgr::getBrightness(void)
 {
     uint8_t                     brightness = 0U;
-    MutexGuard<MutexRecursive>  guard(m_mutex);
+    MutexGuard<MutexRecursive>  guard(m_mutexInterf);
 
     brightness = BrightnessCtrl::getInstance().getBrightness();
 
@@ -273,62 +290,55 @@ uint8_t DisplayMgr::installPlugin(IPluginMaintenance* plugin, uint8_t slotId)
 {
     if (nullptr == plugin)
     {
-        slotId = SLOT_ID_INVALID;
+        slotId = SlotList::SLOT_ID_INVALID;
     }
     else
     {
+        Slot*                       emptyAndUnlockedSlot    = nullptr;
+        MutexGuard<MutexRecursive>  guard(m_mutexInterf);
+
         /* Install to any available slot? */
-        if (SLOT_ID_INVALID == slotId)
+        if (SlotList::SLOT_ID_INVALID == slotId)
         {
-            MutexGuard<MutexRecursive> guard(m_mutex);
+            slotId = m_slotList.getEmptyUnlockedSlot();
 
-            /* Find a empty unlocked slot. */
-            slotId = 0U;
-            while((m_maxSlots > slotId) && ((false == m_slots[slotId].isEmpty()) || (true == m_slots[slotId].isLocked())))
-            {
-                ++slotId;
-            }
-
-            if (m_maxSlots > slotId)
-            {
-                if (false == m_slots[slotId].setPlugin(plugin))
-                {
-                    slotId = SLOT_ID_INVALID;
-                }
-                else
-                {
-                    plugin->start(Display::getInstance().getWidth(), Display::getInstance().getHeight());
-                }
-            }
-            else
-            {
-                slotId = SLOT_ID_INVALID;
-            }
+            emptyAndUnlockedSlot = m_slotList.getSlot(slotId);
         }
         /* Install to specific slot? */
-        else if ((m_maxSlots > slotId) &&
-                 (true == m_slots[slotId].isEmpty()) &&
-                 (false == m_slots[slotId].isLocked()))
+        else if (true == m_slotList.isSlotEmptyAndUnlocked(slotId))
         {
-            MutexGuard<MutexRecursive> guard(m_mutex);
+            emptyAndUnlockedSlot = m_slotList.getSlot(slotId);
+        }
+        else
+        /* Invalid slot id */
+        {
+            slotId = SlotList::SLOT_ID_INVALID;
+        }
 
-            if (false == m_slots[slotId].setPlugin(plugin))
+        if (nullptr != emptyAndUnlockedSlot)
+        {
+            if (false == emptyAndUnlockedSlot->setPlugin(plugin))
             {
-                slotId = SLOT_ID_INVALID;
+                slotId = SlotList::SLOT_ID_INVALID;
             }
             else
             {
+                LOG_INFO("Start plugin %s (UID %u) in slot %u.", plugin->getName(), plugin->getUID(), slotId);
                 plugin->start(Display::getInstance().getWidth(), Display::getInstance().getHeight());
             }
         }
         else
         {
-            slotId = SLOT_ID_INVALID;
+            slotId = SlotList::SLOT_ID_INVALID;
         }
 
-        if (m_maxSlots > slotId)
+        if (SlotList::SLOT_ID_INVALID == slotId)
         {
-            LOG_INFO("Plugin %s installed in slot %u.", plugin->getName(), slotId);
+            LOG_ERROR("Couldn't install plugin %s (UID %u) in slot %u.", plugin->getName(), plugin->getUID(), slotId);
+        }
+        else
+        {
+            LOG_INFO("Plugin %s (UID %u) installed in slot %u.", plugin->getName(), plugin->getUID(), slotId);
         }
     }
 
@@ -341,14 +351,14 @@ bool DisplayMgr::uninstallPlugin(IPluginMaintenance* plugin)
 
     if (nullptr != plugin)
     {
-        uint8_t                     slotId = SLOT_ID_INVALID;
-        MutexGuard<MutexRecursive>  guard(m_mutex);
+        uint8_t                     slotId = SlotList::SLOT_ID_INVALID;
+        MutexGuard<MutexRecursive>  guard(m_mutexInterf);
 
-        slotId = getSlotIdByPluginUID(plugin->getUID());
+        slotId = m_slotList.getSlotIdByPluginUID(plugin->getUID());
 
-        if (m_maxSlots > slotId)
+        if (true == m_slotList.isSlotIdValid(slotId))
         {
-            if (false == m_slots[slotId].isLocked())
+            if (false == m_slotList.isSlotLocked(slotId))
             {
                 /* Is this plugin selected at the moment? */
                 if (m_selectedPlugin == plugin)
@@ -357,8 +367,9 @@ bool DisplayMgr::uninstallPlugin(IPluginMaintenance* plugin)
                     m_selectedPlugin = nullptr;
                 }
 
+                LOG_INFO("Stop plugin %s (UID %u) in slot %u.", plugin->getName(), plugin->getUID(), slotId);
                 plugin->stop();
-                if (false == m_slots[slotId].setPlugin(nullptr))
+                if (false == m_slotList.setPlugin(slotId, nullptr))
                 {
                     LOG_FATAL("Internal error.");
                 }
@@ -371,11 +382,11 @@ bool DisplayMgr::uninstallPlugin(IPluginMaintenance* plugin)
 
         if (false == status)
         {
-            LOG_INFO("Couldn't remove plugin %s (uid %u) from slot %u, because slot is locked.", plugin->getName(), plugin->getUID(), slotId);
+            LOG_ERROR("Couldn't remove plugin %s (UID %u) from slot %u, because slot is locked.", plugin->getName(), plugin->getUID(), slotId);
         }
         else
         {
-            LOG_INFO("Plugin %s (uid %u) removed from slot %u.", plugin->getName(), plugin->getUID(), slotId);
+            LOG_INFO("Plugin %s (UID %u) removed from slot %u.", plugin->getName(), plugin->getUID(), slotId);
         }
     }
 
@@ -385,17 +396,13 @@ bool DisplayMgr::uninstallPlugin(IPluginMaintenance* plugin)
 String DisplayMgr::getPluginAliasName(uint16_t uid)
 {
     String                      alias;
-    uint8_t                     slotId          = getSlotIdByPluginUID(uid);
-    MutexGuard<MutexRecursive>  guard(m_mutex);
+    MutexGuard<MutexRecursive>  guard(m_mutexInterf);
+    uint8_t                     slotId  = m_slotList.getSlotIdByPluginUID(uid);
+    IPluginMaintenance*         plugin  = m_slotList.getPlugin(slotId);
 
-    if (SLOT_ID_INVALID != slotId)
+    if (nullptr != plugin)
     {
-        IPluginMaintenance* plugin = m_slots[slotId].getPlugin();
-
-        if (nullptr != plugin)
-        {
-            alias = plugin->getAlias();
-        }
+        alias = plugin->getAlias();
     }
 
     return alias;
@@ -404,22 +411,18 @@ String DisplayMgr::getPluginAliasName(uint16_t uid)
 bool DisplayMgr::setPluginAliasName(uint16_t uid, const String& alias)
 {
     bool                        isSuccessful    = false;
-    uint8_t                     slotId          = getSlotIdByPluginUID(uid);
-    MutexGuard<MutexRecursive>  guard(m_mutex);
+    MutexGuard<MutexRecursive>  guard(m_mutexInterf);
+    uint8_t                     slotId          = m_slotList.getSlotIdByPluginUID(uid);
+    IPluginMaintenance*         plugin          = m_slotList.getPlugin(slotId);
 
-    if (SLOT_ID_INVALID != slotId)
+    if (nullptr != plugin)
     {
-        IPluginMaintenance* plugin = m_slots[slotId].getPlugin();
-
-        if (nullptr != plugin)
+        if (true == PluginMgr::getInstance().setPluginAliasName(plugin, alias))
         {
-            if (true == PluginMgr::getInstance().setPluginAliasName(plugin, alias))
-            {
-                /* Save current installed plugins to persistent memory. */
-                PluginMgr::getInstance().save();
-                
-                isSuccessful = true;
-            }
+            /* Save current installed plugins to persistent memory. */
+            PluginMgr::getInstance().save();
+            
+            isSuccessful = true;
         }
     }
 
@@ -428,78 +431,128 @@ bool DisplayMgr::setPluginAliasName(uint16_t uid, const String& alias)
 
 uint8_t DisplayMgr::getSlotIdByPluginUID(uint16_t uid)
 {
-    uint8_t                     index   = 0U;
-    uint8_t                     slotId  = SLOT_ID_INVALID;
-    MutexGuard<MutexRecursive>  guard(m_mutex);
-
-    while((m_maxSlots > index) && (m_maxSlots <= slotId))
-    {
-        if (false == m_slots[index].isEmpty())
-        {
-            if (uid == m_slots[index].getPlugin()->getUID())
-            {
-                slotId = index;
-            }
-        }
-
-        ++index;
-    }
+    MutexGuard<MutexRecursive>  guard(m_mutexInterf);
+    uint8_t                     slotId = m_slotList.getSlotIdByPluginUID(uid);
 
     return slotId;
 }
 
 IPluginMaintenance* DisplayMgr::getPluginInSlot(uint8_t slotId)
 {
-    IPluginMaintenance* plugin = nullptr;
-
-    if (m_maxSlots > slotId)
-    {
-        MutexGuard<MutexRecursive> guard(m_mutex);
-
-        plugin = m_slots[slotId].getPlugin();
-    }
+    MutexGuard<MutexRecursive>  guard(m_mutexInterf);
+    IPluginMaintenance*         plugin = m_slotList.getPlugin(slotId);
 
     return plugin;
 }
 
-void DisplayMgr::activatePlugin(IPluginMaintenance* plugin)
+uint8_t DisplayMgr::getStickySlot() const
 {
-    if (nullptr != plugin)
+    MutexGuard<MutexRecursive>  guard(m_mutexInterf);
+    uint8_t                     slotId = m_slotList.getStickySlot();
+
+    return slotId;
+}
+
+bool DisplayMgr::setSlotSticky(uint8_t slotId)
+{
+    bool                        isSuccessful = false;
+    MutexGuard<MutexRecursive>  guard(m_mutexInterf);
+
+    /* Activation will take place in process(). */
+    isSuccessful = m_slotList.setSlotSticky(slotId);
+
+    if (true == isSuccessful)
     {
-        uint8_t                     slotId = SLOT_ID_INVALID;
-        MutexGuard<MutexRecursive>  guard(m_mutex);
-
-        slotId = getSlotIdByPluginUID(plugin->getUID());
-
-        if (m_maxSlots > slotId)
+        if (SlotList::SLOT_ID_INVALID == slotId)
         {
-            m_requestedPlugin = plugin;
+            LOG_INFO("Sticky flag cleared.");
+        }
+        else
+        {
+            LOG_INFO("Set slot %u sticky.", slotId);
         }
     }
 
-    return;
+    return isSuccessful;
+}
+
+void DisplayMgr::clearSticky()
+{
+    MutexGuard<MutexRecursive> guard(m_mutexInterf);
+
+    m_slotList.clearSticky();
+
+    if (SlotList::SLOT_ID_INVALID != m_selectedSlotId)
+    {
+        uint32_t duration = m_slotList.getDuration(m_selectedSlotId);
+
+        /* If sticky flag is removed, the slot timer was original stopped and will be started again.
+         * Makes only sense if the slot duration is not 0.
+         */
+        if ((0U != duration) &&
+            (false == m_slotTimer.isTimerRunning()))
+        {
+            m_slotTimer.start(duration);
+        }
+    }
+
+    LOG_INFO("Sticky flag cleared.");
+}
+
+bool DisplayMgr::activateSlot(uint8_t slotId)
+{
+    bool                        isSuccessful = false;
+    MutexGuard<MutexRecursive>  guard(m_mutexInterf);
+
+    if (true == m_slotList.isSlotIdValid(slotId))
+    {
+        /* Slot already active? */
+        if (slotId == m_selectedSlotId)
+        {
+            m_requestedPlugin   = nullptr;
+            isSuccessful        = true;
+        }
+        /* No slot is sticky? */
+        else if (SlotList::SLOT_ID_INVALID == m_slotList.getStickySlot())
+        {
+            m_requestedPlugin   = m_slotList.getPlugin(slotId);
+            isSuccessful        = true;
+        }
+        else
+        {
+            /* Activation not possible. */
+            ;
+        }
+    }
+
+    return isSuccessful;
 }
 
 void DisplayMgr::activateNextSlot()
 {
-    MutexGuard<MutexRecursive> guard(m_mutex);
+    MutexGuard<MutexRecursive>  guard(m_mutexInterf);
+    uint8_t                     nextSlotId = nextSlot(m_selectedSlotId);
 
-    /* Avoid changing to next slot, if the there is a pending slot change. */
-    if (FADE_IDLE == m_displayFadeState)
+    if (nextSlotId != m_selectedSlotId)
     {
-        /* If slot timer is running, force a slot change by setting the duration to 0. */
-        if (true == m_slotTimer.isTimerRunning())
-        {
-            m_slotTimer.start(0U);
-        }
+        (void)activateSlot(nextSlotId);
     }
+}
 
-    return;
+void DisplayMgr::activatePreviousSlot()
+{
+    MutexGuard<MutexRecursive>  guard(m_mutexInterf);
+    uint8_t                     previousSlotId = previousSlot(m_selectedSlotId);
+
+    if (previousSlotId != m_selectedSlotId)
+    {
+        (void)activateSlot(previousSlotId);
+    }
 }
 
 void DisplayMgr::activateNextFadeEffect(FadeEffect fadeEffect)
 {
-    MutexGuard<MutexRecursive> guard(m_mutex);
+    MutexGuard<MutexRecursive> guard(m_mutexInterf);
 
     if (FADE_EFFECT_COUNT <= fadeEffect)
     {
@@ -511,14 +564,12 @@ void DisplayMgr::activateNextFadeEffect(FadeEffect fadeEffect)
     }
 
     m_fadeEffectUpdate = true;
-
-    return;
 }
 
 DisplayMgr::FadeEffect DisplayMgr::getFadeEffect()
 {
     FadeEffect                  currentFadeEffect;
-    MutexGuard<MutexRecursive>  guard(m_mutex);
+    MutexGuard<MutexRecursive>  guard(m_mutexInterf);
 
     currentFadeEffect = m_fadeEffectIndex;
     
@@ -527,34 +578,38 @@ DisplayMgr::FadeEffect DisplayMgr::getFadeEffect()
 
 bool DisplayMgr::movePluginToSlot(IPluginMaintenance* plugin, uint8_t slotId)
 {
-    bool status = false;
+    bool                        status = false;
+    MutexGuard<MutexRecursive>  guard(m_mutexInterf);
 
     if ((nullptr != plugin) &&
-        (m_maxSlots > slotId))
+        (true == m_slotList.isSlotEmptyAndUnlocked(slotId)))
     {
-        uint8_t srcSlotId = getSlotIdByPluginUID(plugin->getUID());
+        uint8_t srcSlotId = m_slotList.getSlotIdByPluginUID(plugin->getUID());
 
-        if ((m_maxSlots > srcSlotId) &&
+        if ((true == m_slotList.isSlotIdValid(srcSlotId)) &&
             (srcSlotId != slotId))
         {
-            Slot*                       srcSlot = &m_slots[srcSlotId];
-            Slot*                       dstSlot = &m_slots[slotId];
-            MutexGuard<MutexRecursive>  guard(m_mutex);
+            Slot*   srcSlot = m_slotList.getSlot(srcSlotId);
+            Slot*   dstSlot = m_slotList.getSlot(slotId);
 
-            if (false == dstSlot->isLocked())
+            if ((nullptr != srcSlot) &&
+                (nullptr != dstSlot))
             {
-                srcSlot->setPlugin(dstSlot->getPlugin());
-                dstSlot->setPlugin(plugin);
-
-                /* Is one of the moved plugins selected at the moment? */
-                if ((m_selectedPlugin == srcSlot->getPlugin()) ||
-                    (m_selectedPlugin == dstSlot->getPlugin()))
+                if (false == dstSlot->isLocked())
                 {
-                    /* Remove selection */
-                    m_selectedPlugin = nullptr;
-                }
+                    srcSlot->setPlugin(dstSlot->getPlugin());
+                    dstSlot->setPlugin(plugin);
 
-                status = true;
+                    /* Is one of the moved plugins selected at the moment? */
+                    if ((m_selectedPlugin == srcSlot->getPlugin()) ||
+                        (m_selectedPlugin == dstSlot->getPlugin()))
+                    {
+                        /* Remove selection */
+                        m_selectedPlugin = nullptr;
+                    }
+
+                    status = true;
+                }
             }
         }
     }
@@ -564,73 +619,45 @@ bool DisplayMgr::movePluginToSlot(IPluginMaintenance* plugin, uint8_t slotId)
 
 void DisplayMgr::lockSlot(uint8_t slotId)
 {
-    if (m_maxSlots > slotId)
-    {
-        MutexGuard<MutexRecursive> guard(m_mutex);
+    MutexGuard<MutexRecursive> guard(m_mutexInterf);
 
-        m_slots[slotId].lock();
-    }
-
-    return;
+    m_slotList.lock(slotId);
 }
 
 void DisplayMgr::unlockSlot(uint8_t slotId)
 {
-    if (m_maxSlots > slotId)
-    {
-        MutexGuard<MutexRecursive> guard(m_mutex);
+    MutexGuard<MutexRecursive> guard(m_mutexInterf);
 
-        m_slots[slotId].unlock();
-    }
-
-    return;
+    m_slotList.unlock(slotId);
 }
 
 bool DisplayMgr::isSlotLocked(uint8_t slotId)
 {
-    bool isLocked = true;
-
-    if (m_maxSlots > slotId)
-    {
-        MutexGuard<MutexRecursive> guard(m_mutex);
-
-        isLocked = m_slots[slotId].isLocked();
-    }
+    MutexGuard<MutexRecursive>  guard(m_mutexInterf);
+    bool                        isLocked = m_slotList.isSlotLocked(slotId);
 
     return isLocked;
 }
 
 uint32_t DisplayMgr::getSlotDuration(uint8_t slotId)
 {
-    uint32_t duration = 0U;
-
-    if (m_maxSlots > slotId)
-    {
-        MutexGuard<MutexRecursive> guard(m_mutex);
-
-        duration = m_slots[slotId].getDuration();
-    }
+    MutexGuard<MutexRecursive>  guard(m_mutexInterf);
+    uint32_t                    duration = m_slotList.getDuration(slotId);
 
     return duration;
 }
 
 bool DisplayMgr::setSlotDuration(uint8_t slotId, uint32_t duration, bool store)
 {
-    bool status = false;
+    bool                        status      = false;
+    MutexGuard<MutexRecursive>  guard(m_mutexInterf);
+    Slot*                       slot        = m_slotList.getSlot(slotId);
 
-    if (m_maxSlots > slotId)
+    if (nullptr != slot)
     {
-        MutexGuard<MutexRecursive> guard(m_mutex);
-
-        if (m_slots[slotId].getDuration() != duration)
+        if (slot->getDuration() != duration)
         {
-            m_slots[slotId].setDuration(duration);
-
-            /* Save slot configuration */
-            if (true == store)
-            {
-                save();
-            }
+            slot->setDuration(duration);
         }
 
         status = true;
@@ -648,7 +675,7 @@ void DisplayMgr::getFBCopy(uint32_t* fb, size_t length, uint8_t* slotId)
         int16_t                     x       = 0;
         int16_t                     y       = 0;
         size_t                      index   = 0;
-        MutexGuard<MutexRecursive>  guard(m_mutex);
+        MutexGuard<MutexRecursive>  guard(m_mutexInterf);
 
         /* Copy framebuffer after it is completely updated. */
         for(y = 0; y < display.getHeight(); ++y)
@@ -667,11 +694,51 @@ void DisplayMgr::getFBCopy(uint32_t* fb, size_t length, uint8_t* slotId)
 
         if (nullptr != slotId)
         {
-            *slotId = m_selectedSlot;
+            *slotId = m_selectedSlotId;
         }
     }
+}
 
-    return;
+uint8_t DisplayMgr::getMaxSlots() const
+{
+    MutexGuard<MutexRecursive>  guard(m_mutexInterf);
+    uint8_t                     maxSlots = m_slotList.getMaxSlots();
+
+    return maxSlots;
+}
+
+void DisplayMgr::setNetworkStatus(bool isConnected)
+{
+    MutexGuard<MutexRecursive>  guard(m_mutexInterf);
+
+    m_isNetworkConnected = isConnected;
+}
+
+void DisplayMgr::displayOff()
+{
+    MutexGuard<MutexRecursive>  guard1(m_mutexInterf);
+    MutexGuard<MutexRecursive>  guard2(m_mutexUpdate);
+    
+    Display::getInstance().off();
+}
+
+void DisplayMgr::displayOn()
+{
+    MutexGuard<MutexRecursive>  guard1(m_mutexInterf);
+    MutexGuard<MutexRecursive>  guard2(m_mutexUpdate);
+
+    Display::getInstance().on();
+}
+
+bool DisplayMgr::isDisplayOn() const
+{
+    bool                        isDisplayOn             = false;
+    MutexGuard<MutexRecursive>  guard1(m_mutexInterf);
+    MutexGuard<MutexRecursive>  guard2(m_mutexUpdate);
+
+    isDisplayOn = Display::getInstance().isOn();
+
+    return isDisplayOn;
 }
 
 /******************************************************************************
@@ -683,87 +750,138 @@ void DisplayMgr::getFBCopy(uint32_t* fb, size_t length, uint8_t* slotId)
  *****************************************************************************/
 
 DisplayMgr::DisplayMgr() :
-    m_mutex(),
-    m_taskHandle(nullptr),
-    m_taskExit(false),
-    m_xSemaphore(nullptr),
-    m_slots(nullptr),
-    m_maxSlots(0U),
-    m_selectedSlot(SLOT_ID_INVALID),
+    m_mutexInterf(),
+    m_mutexUpdate(),
+    m_processTaskHandle(nullptr),
+    m_processTaskExit(false),
+    m_processTaskSemaphore(nullptr),
+    m_updateTaskHandle(nullptr),
+    m_updateTaskExit(false),
+    m_updateTaskSemaphore(nullptr),
+    m_slotList(),
+    m_selectedSlotId(SlotList::SLOT_ID_INVALID),
     m_selectedPlugin(nullptr),
     m_requestedPlugin(nullptr),
     m_slotTimer(),
     m_displayFadeState(FADE_IN),
-    m_currCanvas(nullptr),
+    m_selectedFrameBuffer(nullptr),
     m_framebuffers(),
     m_fadeLinearEffect(),
     m_fadeMoveXEffect(),
     m_fadeMoveYEffect(),
     m_fadeEffect(&m_fadeLinearEffect),
     m_fadeEffectIndex(FADE_EFFECT_LINEAR),
-    m_fadeEffectUpdate(false)
+    m_fadeEffectUpdate(false),
+    m_isNetworkConnected(false)
 {
-    uint8_t idx = 0U;
-
-    for(idx = 0; idx < UTIL_ARRAY_NUM(m_framebuffers); ++idx)
-    {
-        m_framebuffers[idx] = nullptr;
-    }
 }
 
 DisplayMgr::~DisplayMgr()
 {
-    uint8_t idx = 0;
-
     end();
-
-    for(idx = 0; idx < UTIL_ARRAY_NUM(m_framebuffers); ++idx)
-    {
-        if (nullptr != m_framebuffers[idx])
-        {
-            delete m_framebuffers[idx];
-            m_framebuffers[idx] = nullptr;
-        }
-    }
 }
 
 uint8_t DisplayMgr::nextSlot(uint8_t slotId)
 {
     uint8_t count = 0U;
 
-    if (m_maxSlots <= slotId)
+    if (m_slotList.getMaxSlots() <= slotId)
     {
         slotId = 0U;
     }
     else
     {
         ++slotId;
-        slotId %= m_maxSlots;
+        slotId %= m_slotList.getMaxSlots();
     }
 
     /* Set next slot active, precondition is a installed plugin which is enabled.  */
     do
     {
-        /* Plugin installed? */
-        if (false == m_slots[slotId].isEmpty())
+        Slot* slot = m_slotList.getSlot(slotId);
+
+        if (nullptr != slot)
         {
-            /* Plugin enabled? */
-            if (true == m_slots[slotId].getPlugin()->isEnabled())
+            /* Plugin installed? */
+            if (false == slot->isEmpty())
             {
-                break;
+                /* Plugin enabled? */
+                if (true == slot->getPlugin()->isEnabled())
+                {
+                    break;
+                }
             }
         }
 
         ++slotId;
-        slotId %= m_maxSlots;
+        slotId %= m_slotList.getMaxSlots();
 
         ++count;
     }
-    while (m_maxSlots > count);
+    while (m_slotList.getMaxSlots() > count);
 
-    if (m_maxSlots <= count)
+    if (m_slotList.getMaxSlots() <= count)
     {
-        slotId = SLOT_ID_INVALID;
+        slotId = SlotList::SLOT_ID_INVALID;
+    }
+
+    return slotId;
+}
+
+uint8_t DisplayMgr::previousSlot(uint8_t slotId)
+{
+    uint8_t count = 0U;
+
+    if (m_slotList.getMaxSlots() <= slotId)
+    {
+        slotId = 0U;
+    }
+    else
+    {
+        if (0U == slotId)
+        {
+            slotId = m_slotList.getMaxSlots() - 1U;
+        }
+        else
+        {
+            --slotId;
+        }
+    }
+
+    /* Set previous slot active, precondition is a installed plugin which is enabled.  */
+    do
+    {
+        Slot* slot = m_slotList.getSlot(slotId);
+
+        if (nullptr != slot)
+        {
+            /* Plugin installed? */
+            if (false == slot->isEmpty())
+            {
+                /* Plugin enabled? */
+                if (true == slot->getPlugin()->isEnabled())
+                {
+                    break;
+                }
+            }
+        }
+
+        if (0U == slotId)
+        {
+            slotId = m_slotList.getMaxSlots() - 1U;
+        }
+        else
+        {
+            --slotId;
+        }
+
+        ++count;
+    }
+    while (m_slotList.getMaxSlots() > count);
+
+    if (m_slotList.getMaxSlots() <= count)
+    {
+        slotId = SlotList::SLOT_ID_INVALID;
     }
 
     return slotId;
@@ -774,13 +892,13 @@ void DisplayMgr::startFadeOut()
     /* Select next framebuffer and keep old content, until
      * the fade effect is finished.
      */
-    if (m_currCanvas == m_framebuffers[FB_ID_0])
+    if (m_selectedFrameBuffer == &m_framebuffers[FB_ID_0])
     {
-        m_currCanvas = m_framebuffers[FB_ID_1];
+        m_selectedFrameBuffer = &m_framebuffers[FB_ID_1];
     }
     else
     {
-        m_currCanvas = m_framebuffers[FB_ID_0];
+        m_selectedFrameBuffer = &m_framebuffers[FB_ID_0];
     }
 
     m_displayFadeState = FADE_OUT;
@@ -793,25 +911,25 @@ void DisplayMgr::startFadeOut()
 
 void DisplayMgr::fadeInOut(YAGfx& dst)
 {
-    if ((nullptr != m_currCanvas) &&
+    if ((nullptr != m_selectedFrameBuffer) &&
         (nullptr != m_fadeEffect))
     {
-        Canvas* prevFb = nullptr;
+        YAGfxBitmap* prevFb = nullptr;
 
         /* Determine previous frame buffer */
-        if (m_currCanvas == m_framebuffers[FB_ID_0])
+        if (m_selectedFrameBuffer == &m_framebuffers[FB_ID_0])
         {
-            prevFb = m_framebuffers[FB_ID_1];
+            prevFb = &m_framebuffers[FB_ID_1];
         }
         else
         {
-            prevFb = m_framebuffers[FB_ID_0];
+            prevFb = &m_framebuffers[FB_ID_0];
         }
 
-        /* Continously update the current canvas with its framebuffer. */
+        /* Continuously update the current canvas with its framebuffer. */
         if (nullptr != m_selectedPlugin)
         {
-            m_selectedPlugin->update(*m_currCanvas);
+            m_selectedPlugin->update(*m_selectedFrameBuffer);
         }
 
         /* Handle fading */
@@ -819,12 +937,12 @@ void DisplayMgr::fadeInOut(YAGfx& dst)
         {
         /* No fading at all */
         case FADE_IDLE:
-            m_currCanvas->updateFromBuffer(dst);
+            dst.drawBitmap(0, 0, *m_selectedFrameBuffer);
             break;
 
         /* Fade new display content in */
         case FADE_IN:
-            if (true == m_fadeEffect->fadeIn(dst, *prevFb, *m_currCanvas))
+            if (true == m_fadeEffect->fadeIn(dst, *prevFb, *m_selectedFrameBuffer))
             {
                 m_displayFadeState = FADE_IDLE;
             }
@@ -832,7 +950,7 @@ void DisplayMgr::fadeInOut(YAGfx& dst)
 
         /* Fade old display content out! */
         case FADE_OUT:
-            if (true == m_fadeEffect->fadeOut(dst, *prevFb, *m_currCanvas))
+            if (true == m_fadeEffect->fadeOut(dst, *prevFb, *m_selectedFrameBuffer))
             {
                 m_displayFadeState = FADE_IN;
             }
@@ -842,29 +960,45 @@ void DisplayMgr::fadeInOut(YAGfx& dst)
             break;
         }
     }
-
-    return;
 }
 
 void DisplayMgr::process()
 {
-    IDisplay&                   display = Display::getInstance();
-    uint8_t                     index   = 0U;
-    MutexGuard<MutexRecursive>  guard(m_mutex);
+    IDisplay&                   display     = Display::getInstance();
+    uint8_t                     index       = 0U;
+    uint8_t                     stickySlot  = SlotList::SLOT_ID_INVALID;
+    MutexGuard<MutexRecursive>  guardInterf(m_mutexInterf);
 
     /* Handle display brightness */
     BrightnessCtrl::getInstance().process();
 
+    /* Check whether a different slot got sticky and it shall be activated. */
+    stickySlot = m_slotList.getStickySlot();
+    if (SlotList::SLOT_ID_INVALID != stickySlot)
+    {
+        /* If slot is set sticky which is active, the slot timer will be stopped to prevent scheduling of other slots. */
+        if (m_selectedSlotId == stickySlot)
+        {
+            m_slotTimer.stop();
+        }
+        else
+        {
+            m_requestedPlugin = m_slotList.getPlugin(stickySlot);
+        }
+    }
+
     /* Plugin requested to choose? */
     if (nullptr != m_requestedPlugin)
     {
+        MutexGuard<MutexRecursive>  guard(m_mutexUpdate);
+
         /* Requested plugin must be enabled, otherwise it won't be scheduled. */
         if (false == m_requestedPlugin->isEnabled())
         {
-            LOG_WARNING("Requested plugin %s (uid %u) in slot %u is disabled.",
+            LOG_WARNING("Requested plugin %s (UID %u) in slot %u is disabled.",
                 m_requestedPlugin->getName(),
                 m_requestedPlugin->getUID(),
-                getSlotIdByPluginUID(m_requestedPlugin->getUID()));
+                m_slotList.getSlotIdByPluginUID(m_requestedPlugin->getUID()));
             m_requestedPlugin = nullptr;
         }
         /* Requested plugin is enabled. Is currently a plugin selected? */
@@ -876,7 +1010,7 @@ void DisplayMgr::process()
              */
             if (m_requestedPlugin == m_selectedPlugin)
             {
-                uint32_t duration = m_slots[m_selectedSlot].getDuration();
+                uint32_t duration = m_slotList.getDuration(m_selectedSlotId);
 
                 m_requestedPlugin = nullptr;
 
@@ -911,7 +1045,9 @@ void DisplayMgr::process()
     if ((nullptr != m_selectedPlugin) &&
         (FADE_IDLE == m_displayFadeState))
     {
-        m_selectedSlot = getSlotIdByPluginUID(m_selectedPlugin->getUID());
+        MutexGuard<MutexRecursive>  guard(m_mutexUpdate);
+
+        m_selectedSlotId = m_slotList.getSlotIdByPluginUID(m_selectedPlugin->getUID());
 
         /* Plugin disabled in the meantime? */
         if (false == m_selectedPlugin->isEnabled())
@@ -927,12 +1063,12 @@ void DisplayMgr::process()
         else if ((true == m_slotTimer.isTimerRunning()) &&
                  (true == m_slotTimer.isTimeout()))
         {
-            uint8_t slotId = nextSlot(m_selectedSlot);
+            uint8_t slotId = nextSlot(m_selectedSlotId);
 
             /* If the next slot is the same as the current slot,
              * just restart the plugin duration timer.
              */
-            if (m_selectedSlot == slotId)
+            if (m_selectedSlotId == slotId)
             {
                 if (true == m_slotTimer.isTimerRunning())
                 {
@@ -956,52 +1092,58 @@ void DisplayMgr::process()
         }
     }
 
-    /* If no plugin is selected, choose the next on. */
+    /* If no plugin is selected, choose the next one. */
     if (nullptr == m_selectedPlugin)
     {
+        MutexGuard<MutexRecursive>  guard(m_mutexUpdate);
+
         /* Plugin requested to choose? */
         if (nullptr != m_requestedPlugin)
         {
-            m_selectedSlot      = getSlotIdByPluginUID(m_requestedPlugin->getUID());
+            m_selectedSlotId    = m_slotList.getSlotIdByPluginUID(m_requestedPlugin->getUID());
             m_requestedPlugin   = nullptr;
         }
         /* Select next slot, which contains a enabled plugin. */
         else
         {
-            m_selectedSlot = nextSlot(m_selectedSlot);
+            m_selectedSlotId = nextSlot(m_selectedSlotId);
         }
 
         /* Next enabled plugin found? */
-        if (m_maxSlots > m_selectedSlot)
+        if (true == m_slotList.isSlotIdValid(m_selectedSlotId))
         {
-            uint32_t duration = 0U;
+            uint32_t duration = m_slotList.getDuration(m_selectedSlotId);
 
-            m_selectedPlugin    = m_slots[m_selectedSlot].getPlugin();
-            duration            = m_slots[m_selectedSlot].getDuration();
+            m_selectedPlugin = m_slotList.getPlugin(m_selectedSlotId);
 
-            /* If plugin shall not be infinite active, start the slot timer. */
-            if (0U != duration)
+            /* If plugin shall be infinite active or is in a sticky slot, the slot timer will be stopped otherwise started. */
+            if ((0U == duration) ||
+                (m_selectedSlotId == m_slotList.getStickySlot()))
+            {
+                m_slotTimer.stop();
+            }
+            else
             {
                 m_slotTimer.start(duration);
             }
 
-            if (nullptr != m_currCanvas)
+            if (nullptr != m_selectedFrameBuffer)
             {
-                m_selectedPlugin->active(*m_currCanvas);
+                m_selectedPlugin->active(*m_selectedFrameBuffer);
             }
             else
             {
                 m_selectedPlugin->active(display);
             }
 
-            LOG_INFO("Slot %u (%s) now active.", m_selectedSlot, m_selectedPlugin->getName());
+            LOG_INFO("Slot %u (%s) now active.", m_selectedSlotId, m_selectedPlugin->getName());
         }
         /* No plugin is active, clear the display. */
         else
         {
-            if (nullptr != m_currCanvas)
+            if (nullptr != m_selectedFrameBuffer)
             {
-                m_currCanvas->fillScreen(ColorDef::BLACK);
+                m_selectedFrameBuffer->fillScreen(ColorDef::BLACK);
             }
             display.clear();
         }
@@ -1032,20 +1174,27 @@ void DisplayMgr::process()
 
         m_fadeEffectUpdate = false;
     }
-    
+
     /* Process all installed plugins. */
-    for(index = 0U; index < m_maxSlots; ++index)
+    for(index = 0U; index < m_slotList.getMaxSlots(); ++index)
     {
-        IPluginMaintenance* plugin = m_slots[index].getPlugin();
+        MutexGuard<MutexRecursive>  guard(m_mutexUpdate);
+        IPluginMaintenance*         plugin = m_slotList.getPlugin(index);
 
         if (nullptr != plugin)
         {
-            plugin->process();
+            plugin->process(m_isNetworkConnected);
         }
     }
+}
+
+void DisplayMgr::update()
+{
+    IDisplay&                   display = Display::getInstance();
+    MutexGuard<MutexRecursive>  guard(m_mutexUpdate);
 
     /* Update display (main canvas available) */
-    if (nullptr != m_currCanvas)
+    if (nullptr != m_selectedFrameBuffer)
     {
         fadeInOut(display);
     }
@@ -1061,18 +1210,176 @@ void DisplayMgr::process()
         ;
     }
 
-    delay(1U);
     display.show();
+}
 
-    return;
+bool DisplayMgr::createProcessTask()
+{
+    bool isSuccessful = false;
+
+    if (nullptr == m_processTaskSemaphore)
+    {
+        /* Create binary semaphore to signal task exit. */
+        m_processTaskSemaphore = xSemaphoreCreateBinary();
+
+        if (nullptr != m_processTaskSemaphore)
+        {
+            BaseType_t  osRet   = pdFAIL;
+
+            /* Task shall run */
+            m_processTaskExit = false;
+
+            osRet = xTaskCreateUniversal(   processTask,
+                                            "processTask",
+                                            PROCESS_TASK_STACK_SIZE,
+                                            this,
+                                            PROCESS_TASK_PRIORITY,
+                                            &m_processTaskHandle,
+                                            PROCESS_TASK_RUN_CORE);
+
+            /* Couldn't task be created? */
+            if (pdPASS != osRet)
+            {
+                vSemaphoreDelete(m_processTaskSemaphore);
+                m_processTaskSemaphore = nullptr;
+            }
+            else
+            {
+                (void)xSemaphoreGive(m_processTaskSemaphore);
+
+                LOG_DEBUG("ProcessTask is up.");
+
+                isSuccessful = true;
+            }
+        }
+    }
+    
+    return isSuccessful;
+}
+
+void DisplayMgr::destroyProcessTask()
+{
+    /* Is the task running? */
+    if (nullptr != m_processTaskSemaphore)
+    {
+        /* Request task to exit and wait until its done. */
+        m_processTaskExit = true;
+        (void)xSemaphoreTake(m_processTaskSemaphore, portMAX_DELAY);
+        m_processTaskHandle = nullptr;
+
+        /* After task is destroyed, the signal semaphore can safely be destroyed. */
+        vSemaphoreDelete(m_processTaskSemaphore);
+        m_processTaskSemaphore = nullptr;
+
+        LOG_DEBUG("ProcessTask is down.");
+    }
+}
+
+bool DisplayMgr::createUpdateTask()
+{
+    bool isSuccessful = false;
+
+    if (nullptr == m_updateTaskSemaphore)
+    {
+        /* Create binary semaphore to signal task exit. */
+        m_updateTaskSemaphore = xSemaphoreCreateBinary();
+
+        if (nullptr != m_updateTaskSemaphore)
+        {
+            BaseType_t  osRet   = pdFAIL;
+
+            /* Task shall run */
+            m_updateTaskExit = false;
+
+            osRet = xTaskCreateUniversal(   updateTask,
+                                            "updateTask",
+                                            UPDATE_TASK_STACK_SIZE,
+                                            this,
+                                            UPDATE_TASK_PRIORITY,
+                                            &m_updateTaskHandle,
+                                            UPDATE_TASK_RUN_CORE);
+
+            /* Couldn't task be created? */
+            if (pdPASS != osRet)
+            {
+                vSemaphoreDelete(m_updateTaskSemaphore);
+                m_updateTaskSemaphore = nullptr;
+            }
+            else
+            {
+                (void)xSemaphoreGive(m_updateTaskSemaphore);
+
+                LOG_DEBUG("UpdateTask is up.");
+
+                isSuccessful = true;
+            }
+        }
+    }
+    
+    return isSuccessful;
+}
+
+void DisplayMgr::destroyUpdateTask()
+{
+    /* Is the task running? */
+    if (nullptr != m_updateTaskSemaphore)
+    {
+        /* Request task to exit and wait until its done. */
+        m_updateTaskExit = true;
+        (void)xSemaphoreTake(m_updateTaskSemaphore, portMAX_DELAY);
+        m_updateTaskHandle = nullptr;
+
+        /* After task is destroyed, the signal semaphore can safely be destroyed. */
+        vSemaphoreDelete(m_updateTaskSemaphore);
+        m_updateTaskSemaphore = nullptr;
+
+        LOG_DEBUG("UpdateTask is down.");
+    }
+}
+
+void DisplayMgr::processTask(void* parameters)
+{
+    DisplayMgr* tthis = static_cast<DisplayMgr*>(parameters);
+
+    if ((nullptr != tthis) &&
+        (nullptr != tthis->m_processTaskSemaphore))
+    {
+        (void)xSemaphoreTake(tthis->m_processTaskSemaphore, portMAX_DELAY);
+
+        while(false == tthis->m_processTaskExit)
+        {
+            uint32_t    timestamp   = millis();
+            uint32_t    duration    = 0U;
+
+            /* Process all slot and plugin related stuff. */
+            tthis->process();
+
+            /* Calculate overall duration */
+            duration = millis() - timestamp;
+
+            /* Give other tasks a chance. */
+            if (PROCESS_TASK_PERIOD <= duration)
+            {
+                delay(1U);
+            }
+            else
+            {
+                delay(PROCESS_TASK_PERIOD - duration);
+            }
+        }
+
+        (void)xSemaphoreGive(tthis->m_processTaskSemaphore);
+    }
+
+    vTaskDelete(nullptr);
 }
 
 void DisplayMgr::updateTask(void* parameters)
 {
-    DisplayMgr* displayMgr = reinterpret_cast<DisplayMgr*>(parameters);
+    DisplayMgr* tthis = static_cast<DisplayMgr*>(parameters);
 
-    if ((nullptr != displayMgr) &&
-        (nullptr != displayMgr->m_xSemaphore))
+    if ((nullptr != tthis) &&
+        (nullptr != tthis->m_updateTaskSemaphore))
     {
 #if (0 != CONFIG_DISPLAY_MGR_ENABLE_STATISTICS)
         Statistics      statistics;
@@ -1084,21 +1391,21 @@ void DisplayMgr::updateTask(void* parameters)
 
 #endif /* (0 != CONFIG_DISPLAY_MGR_ENABLE_STATISTICS) */
 
-        (void)xSemaphoreTake(displayMgr->m_xSemaphore, portMAX_DELAY);
+        (void)xSemaphoreTake(tthis->m_updateTaskSemaphore, portMAX_DELAY);
 
-        while(false == displayMgr->m_taskExit)
+        while(false == tthis->m_updateTaskExit)
         {
             uint32_t    timestamp           = millis();
             uint32_t    duration            = 0U;
-            uint32_t    timestampPhyUpdate  = millis();
+            uint32_t    timestampPhyUpdate  = 0U;
             uint32_t    durationPhyUpdate   = 0U;
             bool        abort               = false;
 
             /* Observe the physical display refresh and limit the duration to 70% of refresh period. */
-            const uint32_t  MAX_LOOP_TIME   = (TASK_PERIOD * 7U) / (10U);
+            const uint32_t  MAX_LOOP_TIME   = (UPDATE_TASK_PERIOD * 7U) / (10U);
 
             /* Refresh display content periodically */
-            displayMgr->process();
+            tthis->update();
 
 #if (0 != CONFIG_DISPLAY_MGR_ENABLE_STATISTICS)
             statistics.pluginProcessing.update(millis() - timestamp);
@@ -1125,13 +1432,13 @@ void DisplayMgr::updateTask(void* parameters)
 
             if (true == statisticsLogTimer.isTimeout())
             {
-                LOG_INFO("[ %2u, %2u, %2u ]", 
+                LOG_DEBUG("[ %2u, %2u, %2u ]", 
                     statistics.refreshPeriod.getMin(),
                     statistics.refreshPeriod.getAvg(),
                     statistics.refreshPeriod.getMax()
                 );
                 
-                LOG_INFO("[ %2u, %2u, %2u ] [ %2u, %2u, %2u ] [ %2u, %2u, %2u ]",
+                LOG_DEBUG("[ %2u, %2u, %2u ] [ %2u, %2u, %2u ] [ %2u, %2u, %2u ]",
                     statistics.pluginProcessing.getMin(),
                     statistics.pluginProcessing.getAvg(),
                     statistics.pluginProcessing.getMax(),
@@ -1157,13 +1464,13 @@ void DisplayMgr::updateTask(void* parameters)
             duration = millis() - timestamp;
 
             /* Give other tasks a chance. */
-            if (TASK_PERIOD <= duration)
+            if (UPDATE_TASK_PERIOD <= duration)
             {
                 delay(1U);
             }
             else
             {
-                delay(TASK_PERIOD - duration);
+                delay(UPDATE_TASK_PERIOD - duration);
             }
 
 #if (0 != CONFIG_DISPLAY_MGR_ENABLE_STATISTICS)
@@ -1172,123 +1479,10 @@ void DisplayMgr::updateTask(void* parameters)
 #endif /* (0 != CONFIG_DISPLAY_MGR_ENABLE_STATISTICS) */
         }
 
-        (void)xSemaphoreGive(displayMgr->m_xSemaphore);
+        (void)xSemaphoreGive(tthis->m_updateTaskSemaphore);
     }
 
     vTaskDelete(nullptr);
-
-    return;
-}
-
-void DisplayMgr::load()
-{
-    Settings& settings = Settings::getInstance();
-
-    if (nullptr == m_slots)
-    {
-        LOG_WARNING("No slot exists.");
-    }
-    else if (false == settings.open(true))
-    {
-        LOG_WARNING("Couldn't open filesystem.");
-    }
-    else
-    {
-        String config = settings.getDisplaySlotConfig().getValue();
-
-        if (true == config.isEmpty())
-        {
-            LOG_WARNING("Display slot configuration is empty.");
-        }
-        else
-        {
-            const size_t            JSON_DOC_SIZE   = 512U;
-            DynamicJsonDocument     jsonDoc(JSON_DOC_SIZE);
-            DeserializationError    error           = deserializeJson(jsonDoc, config);
-
-            if (true == jsonDoc.overflowed())
-            {
-                LOG_ERROR("JSON document has less memory available.");
-            }
-            else
-            {
-                LOG_INFO("JSON document size: %u", jsonDoc.memoryUsage());
-            }
-
-            if (DeserializationError::Ok != error.code())
-            {
-                LOG_WARNING("JSON deserialization failed: %s", error.c_str());
-            }
-            else if (false == jsonDoc["slots"].is<JsonArray>())
-            {
-                LOG_WARNING("Invalid JSON format.");
-            }
-            else
-            {
-                JsonArray   jsonSlots   = jsonDoc["slots"].as<JsonArray>();
-                uint8_t     slotId      = 0;
-
-                for(JsonObject jsonSlot: jsonSlots)
-                {
-                    if (true == jsonSlot["duration"].is<uint32_t>())
-                    {
-                        uint32_t duration = jsonSlot["duration"].as<uint32_t>();
-
-                        m_slots[slotId].setDuration(duration);
-
-                        ++slotId;
-                        if (DisplayMgr::getInstance().getMaxSlots() <= slotId)
-                        {
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        settings.close();
-    }
-}
-
-void DisplayMgr::save()
-{
-    if (nullptr != m_slots)
-    {
-        String              config;
-        uint8_t             slotId      = 0;
-        Settings&           settings    = Settings::getInstance();
-        const size_t        JSON_DOC_SIZE   = 512U;
-        DynamicJsonDocument jsonDoc(JSON_DOC_SIZE);
-        JsonArray           jsonSlots   = jsonDoc.createNestedArray("slots");
-
-        for(slotId = 0; slotId < m_maxSlots; ++slotId)
-        {
-            JsonObject jsonSlot = jsonSlots.createNestedObject();
-
-            jsonSlot["duration"] = m_slots[slotId].getDuration();
-        }
-
-        if (true == jsonDoc.overflowed())
-        {
-            LOG_ERROR("JSON document has less memory available.");
-        }
-        else
-        {
-            LOG_INFO("JSON document size: %u", jsonDoc.memoryUsage());
-        }
-
-        if (false == settings.open(false))
-        {
-            LOG_WARNING("Couldn't open filesystem.");
-        }
-        else
-        {
-            (void)serializeJson(jsonDoc, config);
-
-            settings.getDisplaySlotConfig().setValue(config);
-            settings.close();
-        }
-    }
 }
 
 /******************************************************************************

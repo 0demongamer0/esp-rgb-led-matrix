@@ -8,24 +8,8 @@
         <link rel="stylesheet" type="text/css" href="/style/bootstrap.min.css" />
         <link rel="stylesheet" type="text/css" href="/style/sticky-footer-navbar.css" />
         <link rel="stylesheet" type="text/css" href="/style/style.css" />
-        <style>
-            .bd-placeholder-img {
-                font-size: 1.125rem;
-                text-anchor: middle;
-                -webkit-user-select: none;
-                -moz-user-select: none;
-                -ms-user-select: none;
-                user-select: none;
-            }
 
-            @media (min-width: 768px) {
-                .bd-placeholder-img-lg {
-                    font-size: 3.5rem;
-                }
-            }
-        </style>
-
-        <title>Pixelix</title>
+        <title>PIXELIX</title>
         <link rel="shortcut icon" type="image/png" href="/favicon.png" />
     </head>
     <body class="d-flex flex-column h-100">
@@ -72,6 +56,10 @@
                                 <td>~SW_BRANCH~</td>
                             </tr>
                             <tr>
+                                <td>Target</td>
+                                <td>~TARGET~</td>
+                            </tr>
+                            <tr>
                                 <td>ESP SDK Version</td>
                                 <td>~ESP_SDK_VERSION~</td>
                             </tr>
@@ -82,6 +70,10 @@
                             <tr>
                                 <td>LwIP Version</td>
                                 <td>~LWIP_VERSION~</td>
+                            </tr>
+                            <tr>
+                                <td>mbed TLS Version</td>
+                                <td><a href="https://github.com/espressif/mbedtls/tree/mbedtls-~MBED_TLS_VERSION~-idf">~MBED_TLS_VERSION~</a></td>
                             </tr>
                         </tbody>
                     </table>
@@ -112,6 +104,32 @@
                     </table>
                 </div>
                 <canvas id="canvasChartHeap" width="240" height="240"></canvas>
+                <h3 class="mt-1">PSRAM</h3>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead class="thead-light">
+                            <tr>
+                                <th scope="col">Description</th>
+                                <th scope="col">Result</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-light">
+                            <tr>
+                                <td>PSRAM size</td>
+                                <td>~PSRAM_SIZE~ byte</td>
+                            </tr>
+                            <tr>
+                                <td>Available PSRAM Size</td>
+                                <td id="availablePsramSize">~PSRAM_SIZE_AVAILABLE~ byte</td>
+                            </tr>
+                            <tr>
+                                <td>Used PSRAM Size</td>
+                                <td id="usedPsramSize"></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <canvas id="canvasChartPsram" width="240" height="240"></canvas>
                 <h2 class="mt-1">MCU</h2>
                 <div class="table-responsive">
                     <table class="table table-striped">
@@ -128,6 +146,10 @@
                             </tr>
                             <tr>
                                 <td>MCU Chip ID</td>
+                                <td>~ESP_CHIP_ID~</td>
+                            </tr>
+                            <tr>
+                                <td>MCU Chip Rev.</td>
                                 <td>~ESP_CHIP_REV~</td>
                             </tr>
                             <tr>
@@ -211,21 +233,22 @@
                 <canvas id="canvasChartFs" width="240" height="240"></canvas>
             </div>
         </main>
-  
+
         <!-- Footer -->
         <footer class="footer mt-auto py-3">
             <div class="container">
                 <hr />
-                <span class="text-muted">(C) 2019 - 2021 by Andreas Merkle (web@blue-andi.de)</span><br />
+                <span class="text-muted">(C) 2019 - 2023 Andreas Merkle (web@blue-andi.de)</span><br />
                 <span class="text-muted"><a href="https://github.com/BlueAndi/esp-rgb-led-matrix/blob/master/LICENSE">MIT License</a></span>
             </div>
         </footer>
 
         <!-- jQuery, and Bootstrap JS bundle -->
-        <script type="text/javascript" src="/js/jquery-3.5.1.slim.min.js"></script>
+        <script type="text/javascript" src="/js/jquery-3.6.3.slim.min.js"></script>
         <script type="text/javascript" src="/js/bootstrap.bundle.min.js"></script>
         <!-- Pixelix menu -->
         <script type="text/javascript" src="/js/menu.js"></script>
+        <script type="text/javascript" src="/js/pluginsSubMenu.js"></script>
         <!-- chart.js -->
         <script type="text/javascript" src="/js/rpie.js"></script>
 
@@ -233,6 +256,8 @@
         <script>
             var availableHeapSize   = parseInt("~HEAP_SIZE_AVAILABLE~");
             var heapSize            = parseInt("~HEAP_SIZE~");
+            var availablePsramSize  = parseInt("~PSRAM_SIZE_AVAILABLE~");
+            var psramSize           = parseInt("~PSRAM_SIZE~");
             var filesystemSize      = parseInt("~FS_SIZE~");
             var usedFilesystemSize  = parseInt("~FS_SIZE_USED~");
 
@@ -244,6 +269,14 @@
                 heapSize = 1
             }
 
+            if (isNaN(availablePsramSize)) {
+                availablePsramSize = 0
+            }
+
+            if (isNaN(psramSize)) {
+                psramSize = 1
+            }
+
             if (isNaN(filesystemSize)) {
                 filesystemSize = 1
             }
@@ -252,8 +285,11 @@
                 usedFilesystemSize = 1
             }
 
+            var availableFsSize             = filesystemSize - usedFilesystemSize;
             var availableHeapSizeInPercent  = Math.round(availableHeapSize * 100 / heapSize);
-            var availableFsSizeInPercent    = Math.round((filesystemSize - usedFilesystemSize) * 100 / filesystemSize);
+            var availablePsramSizeInPercent = Math.round(availablePsramSize * 100 /psramSize);
+            var availableFsSizeInPercent    = Math.round(availableFsSize * 100 / filesystemSize);
+            document.getElementById("availableFsSize").innerHTML = availableFsSize + " byte";
 
             window.chartColors = {
                 red: "rgb(255, 99, 132)",
@@ -266,7 +302,8 @@
             };
 
             $(document).ready(function() {
-                menu.create("menu");
+                menu.addSubMenu(menu.data, "Plugins", pluginSubMenu);
+                menu.create("menu", menu.data);
 
                 /* Draw the chart, showing the current situation on the heap. */
                 generatePieGraph("canvasChartHeap", {
@@ -281,9 +318,26 @@
                     values: [100 - availableHeapSizeInPercent, availableHeapSizeInPercent],
                     colors: [window.chartColors.red, window.chartColors.green]
                 });
+
+                /* Draw the chart, showing the current situation on the heap. */
+                generatePieGraph("canvasChartPsram", {
+                    animation: true,
+                    animationSpeed: 20,
+                    fillTextData: true,
+                    fillTextColor: "#fff",
+                    fillTextPosition: "inner",
+                    doughnutHoleColor: "#000",
+                    doughnutHoleSize: 20,
+                    offset: 1,
+                    values: [100 - availablePsramSizeInPercent, availablePsramSizeInPercent],
+                    colors: [window.chartColors.red, window.chartColors.green]
+                });
                 $("#availableHeapSize").css("background-color", window.chartColors.green);
                 $("#usedHeapSize").text("" + (heapSize - availableHeapSize) + " byte");
                 $("#usedHeapSize").css("background-color", window.chartColors.red);
+                $("#availablePsramSize").css("background-color", window.chartColors.green);
+                $("#usedPsramSize").text("" + (psramSize - availablePsramSize) + " byte");
+                $("#usedPsramSize").css("background-color", window.chartColors.red);
 
                 /* Draw the chart, showing the current situation on the filesystem. */
                 generatePieGraph("canvasChartFs", {

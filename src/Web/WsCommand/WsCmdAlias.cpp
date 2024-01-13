@@ -1,6 +1,6 @@
 /* MIT License
  *
- * Copyright (c) 2019 - 2021 Andreas Merkle <web@blue-andi.de>
+ * Copyright (c) 2019 - 2023 Andreas Merkle <web@blue-andi.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -73,28 +73,28 @@ void WsCmdAlias::execute(AsyncWebSocket* server, AsyncWebSocketClient* client)
     /* Any error happended? */
     if (true == m_isError)
     {
-        server->text(client->id(), "NACK;\"Parameter invalid.\"");
+        sendNegativeResponse(server, client, "\"Parameter invalid.\"");
     }
     else
     {
-        String      rsp         = "ACK";
-        const char  DELIMITER   = ';';
+        String msg;
 
         if (2U == m_parCnt)
         {                    
             (void)DisplayMgr::getInstance().setPluginAliasName(m_pluginUid, m_alias);
         }
 
-        rsp += DELIMITER;
-        rsp += DisplayMgr::getInstance().getPluginAliasName(m_pluginUid);
+        preparePositiveResponse(msg);
 
-        server->text(client->id(), rsp);
+        msg += "\"";
+        msg += DisplayMgr::getInstance().getPluginAliasName(m_pluginUid);
+        msg += "\"";
+
+        sendResponse(server, client, msg);
     }
 
     m_isError = false;
     m_parCnt = 0U;
-
-    return;
 }
 
 void WsCmdAlias::setPar(const char* par)
@@ -119,8 +119,6 @@ void WsCmdAlias::setPar(const char* par)
     }
 
     ++m_parCnt;
-
-    return;
 }
 
 /******************************************************************************
